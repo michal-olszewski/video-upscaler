@@ -1,0 +1,20 @@
+[package]
+name = "desktop"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+engine-core = { path = "../../crates/engine-core" }
+inference-runtime = { path = "../../crates/inference-runtime" }
+video-io = { path = "../../crates/video-io" }
+models = { path = "../../crates/models" }
+
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }

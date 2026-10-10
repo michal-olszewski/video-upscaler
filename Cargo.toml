@@ -1,0 +1,37 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/engine-core",
+    "crates/inference-runtime",
+    "crates/image-processing",
+    "crates/video-io",
+    "crates/models",
+    "apps/desktop",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Video Upscaler Team"]
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+# Error handling & logging
+anyhow = "1.0"
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Serialization & Async
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.38", features = ["full"] }
+futures = "0.3"
+
+# Tensor & Image processing
+ndarray = { version = "0.15", features = ["rayon"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+rayon = "1.10"
+
+# Inference Runtime
+ort = { version = "2.0.0-rc.9", default-features = false, features = ["ndarray"] }
