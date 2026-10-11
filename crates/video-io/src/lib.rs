@@ -1,5 +1,11 @@
 pub mod codecs;
+pub mod demuxer;
+pub mod ffmpeg_bin;
 pub mod metadata;
+pub mod muxer;
 
 pub use codecs::{HardwareEncoder, OutputEncodingProfile, VideoCodecType};
-pub use metadata::{AudioStreamInfo, MediaMetadata, VideoStreamInfo};
+pub use demuxer::VideoDemuxer;
+pub use ffmpeg_bin::FfmpegLocator;
+pub use metadata::{AudioStreamInfo, MediaMetadata, MediaProbe, SubtitleStreamInfo, VideoStreamInfo};
+pub use muxer::VideoMuxer;
