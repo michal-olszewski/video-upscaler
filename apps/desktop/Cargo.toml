@@ -21,4 +21,23 @@ tokio = { workspace = true }
 axum = { version = "0.7", features = ["json", "tokio"] }
 tower-http = { version = "0.5", features = ["cors", "fs"] }
 rfd = "0.15"
+tao = "0.31"
+wry = "0.47"
+
+[package.metadata.bundle]
+name = "Video Upscaler Studio"
+identifier = "com.videoupscaler.studio"
+icon = ["icons/32x32.png", "icons/128x128.png", "icons/512x512.png", "icons/icon.ico"]
+version = "0.1.0"
+copyright = "Copyright (c) 2026 Video Upscaler Team. All rights reserved."
+category = "Video"
+short_description = "AI Neural Video Super-Resolution Studio"
+long_description = "High-performance cross-platform video upscaling studio powered by DirectML, CoreML, and FFmpeg."
+
+[package.metadata.bundle.windows]
+digest = "sha256"
+
+[package.metadata.bundle.osx]
+minimum_system_version = "11.0"
+frameworks = ["WebKit.framework", "Metal.framework", "CoreML.framework"]
 

@@ -1,0 +1,91 @@
+name: Build & Release Desktop Studio
+
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-windows:
+    name: Windows x86_64 (DirectML + DirectX 12)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build React UI
+        working-directory: apps/desktop/ui
+        run: |
+          npm ci
+          npm run build
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run Workspace Tests
+        run: cargo test --workspace
+
+      - name: Build Release Binary
+        run: cargo build -p desktop --release
+
+      - name: Package Windows Standalone Bundle
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path "dist/VideoUpscalerStudio-Windows" -Force
+          Copy-Item "target/release/desktop.exe" "dist/VideoUpscalerStudio-Windows/"
+          Copy-Item -Recurse "apps/desktop/ui/dist" "dist/VideoUpscalerStudio-Windows/apps/desktop/ui/dist"
+          Compress-Archive -Path "dist/VideoUpscalerStudio-Windows/*" -DestinationPath "dist/VideoUpscalerStudio-Windows-x64.zip"
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoUpscalerStudio-Windows-x64
+          path: dist/VideoUpscalerStudio-Windows-x64.zip
+
+  build-macos:
+    name: macOS Apple Silicon (CoreML + Metal)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build React UI
+        working-directory: apps/desktop/ui
+        run: |
+          npm ci
+          npm run build
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Build Release Binary
+        run: cargo build -p desktop --release --target aarch64-apple-darwin
+
+      - name: Package macOS Application Bundle
+        run: |
+          mkdir -p "dist/Video Upscaler Studio.app/Contents/MacOS"
+          mkdir -p "dist/Video Upscaler Studio.app/Contents/Resources/apps/desktop/ui"
+          cp "target/aarch64-apple-darwin/release/desktop" "dist/Video Upscaler Studio.app/Contents/MacOS/VideoUpscalerStudio"
+          cp -r "apps/desktop/ui/dist" "dist/Video Upscaler Studio.app/Contents/Resources/apps/desktop/ui/dist"
+          chmod +x "dist/Video Upscaler Studio.app/Contents/MacOS/VideoUpscalerStudio"
+          cd dist && zip -r "VideoUpscalerStudio-macOS-AppleSilicon.zip" "Video Upscaler Studio.app"
+
+      - name: Upload macOS Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoUpscalerStudio-macOS-AppleSilicon
+          path: dist/VideoUpscalerStudio-macOS-AppleSilicon.zip

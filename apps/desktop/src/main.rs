@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use axum::{
     extract::{Json, State},
     http::StatusCode,
@@ -74,13 +76,15 @@ struct ErrorResponse {
 }
 
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     let subscriber = FmtSubscriber::builder()
         .with_max_level(Level::INFO)
         .finish();
     tracing::subscriber::set_global_default(subscriber)
         .expect("Failed to initialize tracing subscriber");
+
+    let args: Vec<String> = std::env::args().collect();
+    let is_headless = args.iter().any(|a| a == "--headless" || a == "--server-only");
 
     info!("Starting Video Upscaler Studio Desktop Service...");
 
@@ -130,13 +134,65 @@ async fn main() -> anyhow::Result<()> {
         .layer(cors)
         .with_state(state);
 
+    let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
 
-    let addr = "127.0.0.1:3001";
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    info!("Video Upscaler Studio API listening at http://{}", addr);
+    let server_handle = std::thread::spawn(move || {
+        runtime.block_on(async {
+            let addr = "127.0.0.1:3001";
+            let listener = match tokio::net::TcpListener::bind(addr).await {
+                Ok(l) => l,
+                Err(e) => {
+                    tracing::error!("Failed to bind server at {}: {}", addr, e);
+                    let _ = ready_tx.send(false);
+                    return;
+                }
+            };
+            info!("Video Upscaler Studio API listening at http://{}", addr);
+            let _ = ready_tx.send(true);
+            if let Err(e) = axum::serve(listener, app).await {
+                tracing::error!("Server error: {}", e);
+            }
+        });
+    });
 
-    axum::serve(listener, app).await?;
-    Ok(())
+    let is_ready = ready_rx.recv().unwrap_or(false);
+    if !is_ready {
+        anyhow::bail!("Server failed to bind to 127.0.0.1:3001");
+    }
+
+    if is_headless {
+        info!("Running in headless server mode (PID {})... Press Ctrl+C to stop.", std::process::id());
+        server_handle.join().unwrap();
+        return Ok(());
+    }
+
+    info!("Opening native OS application window (tao + wry)...");
+    let event_loop = tao::event_loop::EventLoop::new();
+    let window = tao::window::WindowBuilder::new()
+        .with_title("⚡ Video Upscaler Studio Pro")
+        .with_inner_size(tao::dpi::LogicalSize::new(1440.0, 900.0))
+        .with_min_inner_size(tao::dpi::LogicalSize::new(1080.0, 720.0))
+        .build(&event_loop)?;
+
+    let _webview = wry::WebViewBuilder::new()
+        .with_url("http://127.0.0.1:3001")
+        .build(&window)?;
+
+    event_loop.run(move |event, _, control_flow| {
+        *control_flow = tao::event_loop::ControlFlow::Wait;
+        match event {
+            tao::event::Event::WindowEvent {
+                event: tao::event::WindowEvent::CloseRequested,
+                ..
+            } => {
+                *control_flow = tao::event_loop::ControlFlow::Exit;
+            }
+            _ => {}
+        }
+    });
 }
 
 async fn health_check() -> impl IntoResponse {
