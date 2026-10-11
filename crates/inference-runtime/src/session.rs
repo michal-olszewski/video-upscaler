@@ -1,11 +1,11 @@
 use crate::backend::ExecutionBackend;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use ndarray::Array4;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tracing::info;
 
 pub struct InferenceSessionWrapper {
-    model_path: std::path::PathBuf,
+    model_path: PathBuf,
     backend: ExecutionBackend,
     input_shape: (usize, usize, usize, usize), // N, C, H, W
 }
@@ -49,6 +49,10 @@ impl InferenceSessionWrapper {
             backend,
             input_shape: (1, 3, 512, 512), // Standard baseline tile shape
         })
+    }
+
+    pub fn model_path(&self) -> &Path {
+        &self.model_path
     }
 
     pub fn input_shape(&self) -> (usize, usize, usize, usize) {

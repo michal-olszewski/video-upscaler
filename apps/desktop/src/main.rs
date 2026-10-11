@@ -1,14 +1,7 @@
-use engine-core::{JobProgress, UpscaleJobRequest, UpscalePipeline};
-use inference_runtime::{DeviceInfo, HardwareManager};
-use models::{ModelDescriptor, ModelRegistry};
-use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
+use inference_runtime::HardwareManager;
+use models::ModelRegistry;
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
-
-struct AppState {
-    pipeline: Arc<Mutex<Option<UpscalePipeline>>>,
-}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

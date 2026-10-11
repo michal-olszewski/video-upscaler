@@ -1,13 +1,12 @@
 use crate::job::{JobProgress, JobState, UpscaleJobRequest};
 use anyhow::{Context, Result};
-use image_processing::{ColorPipeline, TileSpec, TilingEngine};
-use inference_runtime::InferenceSessionWrapper;
+use image_processing::TileSpec;
 use models::ModelRegistry;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::mpsc;
-use tracing::{error, info};
+use tracing::info;
 
 pub struct UpscalePipeline {
     cancelled: Arc<AtomicBool>,
@@ -45,10 +44,10 @@ impl UpscalePipeline {
             padding: tile_padding,
             scale: model_desc.scale_factor as usize,
         };
-        let tiling_engine = TilingEngine::new(tiling_spec);
+        let _tiling_engine = image_processing::TilingEngine::new(tiling_spec);
 
         let model_path = format!("models/cache/{}", model_desc.filename);
-        let session = InferenceSessionWrapper::new(model_path, request.backend.clone())?;
+        let _session = inference_runtime::InferenceSessionWrapper::new(model_path, request.backend.clone())?;
 
         // Total frames estimated or parsed from video metadata
         let total_frames = 100u64; // Placeholder for initialization

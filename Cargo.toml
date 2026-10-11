@@ -29,9 +29,9 @@ tokio = { version = "1.38", features = ["full"] }
 futures = "0.3"
 
 # Tensor & Image processing
-ndarray = { version = "0.15", features = ["rayon"] }
+ndarray = { version = "0.17", features = ["std", "rayon"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 rayon = "1.10"
 
 # Inference Runtime
-ort = { version = "2.0.0-rc.9", default-features = false, features = ["ndarray"] }
+ort = { version = "2.0.0-rc.9", default-features = false, features = ["ndarray", "directml"] }

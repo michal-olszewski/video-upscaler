@@ -72,3 +72,42 @@ impl ColorPipeline {
         bytes
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_rgb_nchw_roundtrip() {
+        let width = 16;
+        let height = 16;
+        let mut original_bytes = vec![0u8; width * height * 3];
+        for i in 0..original_bytes.len() {
+            original_bytes[i] = (i % 256) as u8;
+        }
+
+        let tensor = ColorPipeline::rgb_bytes_to_nchw(&original_bytes, width, height);
+        assert_eq!(tensor.dim(), (1, 3, height, width));
+
+        let reconstructed_bytes = ColorPipeline::nchw_to_rgb_bytes(&tensor);
+        assert_eq!(original_bytes, reconstructed_bytes);
+    }
+
+    #[test]
+    fn test_film_grain_bounds() {
+        let width = 32;
+        let height = 32;
+        let mut image = Array4::<f32>::from_elem((1, 3, height, width), 0.5);
+
+        ColorPipeline::apply_film_grain(&mut image, 0.2);
+
+        // Verify values remain within [0.0, 1.0]
+        for val in image.iter() {
+            assert!(*val >= 0.0 && *val <= 1.0, "Film grain caused value out of bounds: {}", val);
+        }
+
+        // Verify grain actually varied the values (not static 0.5)
+        let has_variation = image.iter().any(|v| (*v - 0.5).abs() > 1e-4);
+        assert!(has_variation, "Film grain did not introduce variation");
+    }
+}

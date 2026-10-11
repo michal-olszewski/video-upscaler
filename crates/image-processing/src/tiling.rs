@@ -1,4 +1,4 @@
-use ndarray::{s, Array2, Array4};
+use ndarray::{Array2, Array4};
 
 #[derive(Debug, Clone, Copy)]
 pub struct TileSpec {
@@ -17,7 +17,7 @@ impl Default for TileSpec {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TileCoordinate {
     pub in_x: usize,
     pub in_y: usize,
@@ -38,17 +38,21 @@ impl TilingEngine {
         Self { spec }
     }
 
+    pub fn spec(&self) -> &TileSpec {
+        &self.spec
+    }
+
     /// Computes the grid of tile coordinates for an image of dimensions (width, height)
     pub fn compute_tiles(&self, width: usize, height: usize) -> Vec<TileCoordinate> {
         let mut tiles = Vec::new();
-        let step = self.spec.tile_size - (2 * self.spec.padding);
+        let step = (self.spec.tile_size - (2 * self.spec.padding)).max(1);
 
         let mut y = 0;
         while y < height {
-            let h = (self.spec.tile_size).min(height - y);
+            let h = self.spec.tile_size.min(height - y);
             let mut x = 0;
             while x < width {
-                let w = (self.spec.tile_size).min(width - x);
+                let w = self.spec.tile_size.min(width - x);
 
                 let pad_left = if x == 0 { 0 } else { self.spec.padding };
                 let pad_top = if y == 0 { 0 } else { self.spec.padding };
@@ -151,5 +155,106 @@ impl TilingEngine {
         }
 
         output
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tile_grid_coverage_1080p() {
+        let spec = TileSpec {
+            tile_size: 512,
+            padding: 32,
+            scale: 2,
+        };
+        let engine = TilingEngine::new(spec);
+        let tiles = engine.compute_tiles(1920, 1080);
+
+        assert!(!tiles.is_empty(), "Should generate tiles for 1080p");
+        // Check first tile starts at (0, 0)
+        assert_eq!(tiles[0].in_x, 0);
+        assert_eq!(tiles[0].in_y, 0);
+
+        // Check last tile covers bottom-right corner
+        let last = tiles.last().unwrap();
+        assert!(last.in_x + last.in_w >= 1920);
+        assert!(last.in_y + last.in_h >= 1080);
+    }
+
+    #[test]
+    fn test_tile_grid_odd_resolution() {
+        let spec = TileSpec {
+            tile_size: 256,
+            padding: 16,
+            scale: 2,
+        };
+        let engine = TilingEngine::new(spec);
+        // Odd resolution that does not divide evenly
+        let tiles = engine.compute_tiles(723, 481);
+
+        assert!(!tiles.is_empty());
+        let last = tiles.last().unwrap();
+        assert_eq!(last.in_x + last.in_w, 723);
+        assert_eq!(last.in_y + last.in_h, 481);
+    }
+
+    #[test]
+    fn test_hann_mask_properties() {
+        let mask = TilingEngine::create_hann_weight_mask(128, 128);
+        assert_eq!(mask.dim(), (128, 128));
+
+        // Center should have higher weight than corners
+        let center_weight = mask[[64, 64]];
+        let corner_weight = mask[[0, 0]];
+        assert!(center_weight > corner_weight);
+        assert!(center_weight > 0.8, "Center of Hann mask should be near 1.0");
+    }
+
+    #[test]
+    fn test_identity_tiling_reconstruction() {
+        let spec = TileSpec {
+            tile_size: 64,
+            padding: 8,
+            scale: 1, // Identity scale test
+        };
+        let engine = TilingEngine::new(spec);
+        let width = 120;
+        let height = 100;
+
+        // Create constant test image with value 0.75
+        let original = Array4::<f32>::from_elem((1, 3, height, width), 0.75);
+
+        let coords = engine.compute_tiles(width, height);
+        let mut tile_pairs = Vec::new();
+
+        for coord in coords {
+            let mut tile_data = Array4::<f32>::zeros((1, 3, coord.in_h, coord.in_w));
+            for y in 0..coord.in_h {
+                for x in 0..coord.in_w {
+                    for c in 0..3 {
+                        tile_data[[0, c, y, x]] = original[[0, c, coord.in_y + y, coord.in_x + x]];
+                    }
+                }
+            }
+            tile_pairs.push((coord, tile_data));
+        }
+
+        let reconstructed = engine.stitch_tiles(&tile_pairs, width, height);
+
+        // Every reconstructed pixel should closely match 0.75 after Hann normalization
+        for y in 0..height {
+            for x in 0..width {
+                for c in 0..3 {
+                    let diff = (reconstructed[[0, c, y, x]] - 0.75).abs();
+                    assert!(
+                        diff < 1e-3,
+                        "Mismatch at (x={}, y={}, c={}): got {}, expected 0.75",
+                        x, y, c, reconstructed[[0, c, y, x]]
+                    );
+                }
+            }
+        }
     }
 }

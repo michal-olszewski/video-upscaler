@@ -27,10 +27,14 @@ impl HardwareEncoder {
             Self::AmdAmf(VideoCodecType::Av1) => "av1_amf",
             Self::AppleVideoToolbox(VideoCodecType::H264) => "h264_videotoolbox",
             Self::AppleVideoToolbox(VideoCodecType::H265Hevc) => "hevc_videotoolbox",
+            Self::AppleVideoToolbox(VideoCodecType::Av1) => "libsvtav1",
             Self::SoftwareCpu(VideoCodecType::H264) => "libx264",
             Self::SoftwareCpu(VideoCodecType::H265Hevc) => "libx265",
             Self::SoftwareCpu(VideoCodecType::Av1) => "libsvtav1",
-            Self::SoftwareCpu(VideoCodecType::ProRes) | Self::AppleVideoToolbox(VideoCodecType::ProRes) | Self::NvidiaNvenc(VideoCodecType::ProRes) | Self::AmdAmf(VideoCodecType::ProRes) => "prores_ks",
+            Self::SoftwareCpu(VideoCodecType::ProRes)
+            | Self::AppleVideoToolbox(VideoCodecType::ProRes)
+            | Self::NvidiaNvenc(VideoCodecType::ProRes)
+            | Self::AmdAmf(VideoCodecType::ProRes) => "prores_ks",
         }
     }
 }
