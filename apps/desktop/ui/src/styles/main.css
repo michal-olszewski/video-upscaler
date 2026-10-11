@@ -330,3 +330,110 @@ body {
   }
 }
 
+/* Tabs */
+.tab-group {
+  display: flex;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
+  padding: 0 16px;
+  gap: 8px;
+}
+
+.tab-btn {
+  padding: 10px 16px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tab-btn:hover {
+  color: var(--text-main);
+}
+
+.tab-btn.active {
+  color: #60a5fa;
+  border-bottom-color: var(--accent-color);
+}
+
+/* Batch Queue Table */
+.queue-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  background: var(--bg-primary);
+  overflow-y: auto;
+}
+
+.queue-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  text-align: left;
+}
+
+.queue-table th {
+  padding: 10px 14px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.queue-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-main);
+  vertical-align: middle;
+}
+
+.queue-table tr:hover td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.status-queued {
+  background: #3b82f622;
+  color: #60a5fa;
+  border: 1px solid #3b82f644;
+}
+
+.status-processing {
+  background: #f59e0b22;
+  color: #fbbf24;
+  border: 1px solid #f59e0b44;
+}
+
+.status-completed {
+  background: #10b98122;
+  color: #34d399;
+  border: 1px solid #10b98144;
+}
+
+.status-failed {
+  background: #ef444422;
+  color: #f87171;
+  border: 1px solid #ef444444;
+}
+
+.status-cancelled {
+  background: #6b728022;
+  color: #9ca3af;
+  border: 1px solid #6b728044;
+}
+
+

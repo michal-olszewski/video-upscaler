@@ -20,3 +20,5 @@ serde_json = { workspace = true }
 tokio = { workspace = true }
 axum = { version = "0.7", features = ["json", "tokio"] }
 tower-http = { version = "0.5", features = ["cors", "fs"] }
+rfd = "0.15"
+

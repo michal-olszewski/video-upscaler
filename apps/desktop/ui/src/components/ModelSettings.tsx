@@ -52,9 +52,80 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ models, settings, 
     }
   };
 
+  const applyPreset = (preset: string) => {
+    switch (preset) {
+      case 'web':
+        onChange({
+          ...settings,
+          modelId: 'compact-span-x2',
+          scaleFactor: 2,
+          tileSize: 768,
+          filmGrain: 0.08,
+          temporalMode: 'Fast3Frame',
+          encoder: 'hevc_amf',
+          crf: 20,
+        });
+        break;
+      case 'cinematic':
+        onChange({
+          ...settings,
+          modelId: 'realesrgan-x4plus',
+          scaleFactor: 4,
+          tileSize: 512,
+          filmGrain: 0.15,
+          temporalMode: 'Quality5Frame',
+          encoder: 'hevc_nvenc',
+          crf: 16,
+        });
+        break;
+      case 'anime':
+        onChange({
+          ...settings,
+          modelId: 'realesrgan-anime-6b',
+          scaleFactor: 4,
+          tileSize: 512,
+          filmGrain: 0.02,
+          temporalMode: 'Fast3Frame',
+          encoder: 'hevc_nvenc',
+          crf: 18,
+        });
+        break;
+      case 'archival':
+        onChange({
+          ...settings,
+          modelId: 'compact-span-x2',
+          scaleFactor: 2,
+          tileSize: 768,
+          filmGrain: 0.20,
+          temporalMode: 'Quality5Frame',
+          encoder: 'prores_ks',
+          crf: 16,
+        });
+        break;
+    }
+  };
+
   return (
     <div className="sidebar-section">
-      <div className="section-title">Enhancement Model</div>
+      <div className="section-title">Workflow Presets</div>
+      <div className="form-group">
+        <label className="form-label">Quick Profile</label>
+        <select
+          className="select-input"
+          style={{ borderColor: '#3b82f6', background: 'rgba(59, 130, 246, 0.1)' }}
+          onChange={(e) => applyPreset(e.target.value)}
+          defaultValue="custom"
+        >
+          <option value="custom">⚙ Custom Profile</option>
+          <option value="web">⚡ Web & Social (2x Fast, AMF/NVENC, CRF 20, 3-Frame)</option>
+          <option value="cinematic">🎬 Cinematic 4K Master (4x Real-ESRGAN, Grain 15%, CRF 16, 5-Frame)</option>
+          <option value="anime">✨ Anime & Animation (4x Crisp Lines, Low Grain, Fast)</option>
+          <option value="archival">📼 Archival Restoration (2x Compact, Grain 20%, ProRes 422)</option>
+        </select>
+      </div>
+
+      <div className="section-title" style={{ marginTop: '16px' }}>Enhancement Model</div>
+
 
       <div className="form-group">
         <label className="form-label">Neural Model Architecture</label>
