@@ -1,6 +1,6 @@
 use video_io::{
-    FfmpegLocator, HardwareEncoder, MediaProbe, OutputEncodingProfile, VideoCodecType,
-    VideoDemuxer, VideoMuxer,
+    build_video_filter, DeinterlaceMode, DemuxOptions, FfmpegLocator, HardwareEncoder, MediaProbe,
+    OutputEncodingProfile, VideoCodecType, VideoDemuxer, VideoMuxer,
 };
 
 #[test]
@@ -172,5 +172,71 @@ fn test_10bit_hdr10_pipeline_muxing() {
     assert!(out_meta.video_stream.is_hdr(), "Expected stream to be flagged as HDR");
 
     let _ = std::fs::remove_file(test_output);
+}
+
+#[test]
+fn test_deinterlace_and_denoise_demuxing() {
+    // 1. Verify filter string generation logic
+    let filter_none = build_video_filter(&DemuxOptions::default(), false);
+    assert_eq!(filter_none, None);
+
+    let opts_bwdif = DemuxOptions {
+        deinterlace_mode: DeinterlaceMode::BwdifSameRate,
+        ..Default::default()
+    };
+    assert_eq!(
+        build_video_filter(&opts_bwdif, false),
+        Some("bwdif=mode=0:parity=-1:deint=0".to_string())
+    );
+
+    let opts_denoise = DemuxOptions {
+        denoise_strength: 0.5,
+        ..Default::default()
+    };
+    assert_eq!(
+        build_video_filter(&opts_denoise, false),
+        Some("hqdn3d=4.0:3.0:6.0:4.5".to_string())
+    );
+
+    let opts_combined = DemuxOptions {
+        deinterlace_mode: DeinterlaceMode::BwdifSameRate,
+        denoise_strength: 0.5,
+        ..Default::default()
+    };
+    assert_eq!(
+        build_video_filter(&opts_combined, false),
+        Some("bwdif=mode=0:parity=-1:deint=0,hqdn3d=4.0:3.0:6.0:4.5".to_string())
+    );
+
+    // 2. Test actual demuxing with ffmpeg on a synthetic test video
+    let temp_dir = std::env::temp_dir().join("video_upscaler_tests");
+    let _ = std::fs::create_dir_all(&temp_dir);
+    let test_input = temp_dir.join("synthetic_interlace_test.mp4");
+
+    let ffmpeg_bin = FfmpegLocator::find_ffmpeg().expect("ffmpeg must be found");
+    let status = std::process::Command::new(&ffmpeg_bin)
+        .args([
+            "-y",
+            "-f", "lavfi",
+            "-i", "testsrc=duration=0.5:size=160x120:rate=30",
+            "-c:v", "libx264",
+            "-pix_fmt", "yuv420p",
+        ])
+        .arg(&test_input)
+        .status()
+        .expect("Failed to execute ffmpeg");
+    assert!(status.success());
+
+    let mut demuxer = VideoDemuxer::open_with_options(&test_input, opts_combined)
+        .expect("Failed to open demuxer with deinterlace and denoise options");
+
+    let mut count = 0;
+    while let Some(frame) = demuxer.read_frame().expect("Read frame failed") {
+        assert_eq!(frame.len(), 160 * 120 * 3);
+        count += 1;
+    }
+    assert_eq!(count, 15, "Expected 15 frames for 0.5s @ 30fps with same-rate deinterlacer");
+
+    let _ = std::fs::remove_file(test_input);
 }
 

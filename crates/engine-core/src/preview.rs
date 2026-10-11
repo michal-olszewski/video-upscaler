@@ -34,6 +34,27 @@ impl PreviewEngine {
         backend: ExecutionBackend,
         film_grain: f32,
     ) -> Result<PreviewComparisonResult> {
+        Self::generate_preview_with_options(
+            video_path,
+            timestamp_seconds,
+            model_id,
+            backend,
+            film_grain,
+            video_io::DeinterlaceMode::Disabled,
+            0.0,
+        )
+    }
+
+    /// Extracts a single frame with deinterlace and denoise options
+    pub fn generate_preview_with_options<P: AsRef<Path>>(
+        video_path: P,
+        timestamp_seconds: f64,
+        model_id: &str,
+        backend: ExecutionBackend,
+        film_grain: f32,
+        deinterlace_mode: video_io::DeinterlaceMode,
+        denoise_strength: f32,
+    ) -> Result<PreviewComparisonResult> {
         let path = video_path.as_ref();
         let metadata = MediaProbe::probe_file(path)?;
 
@@ -42,26 +63,39 @@ impl PreviewEngine {
         let frame_bytes = in_w * in_h * 3;
 
         let ffmpeg_bin = FfmpegLocator::find_ffmpeg()?;
+        let demux_opts = video_io::DemuxOptions {
+            high_bit_depth: false,
+            deinterlace_mode,
+            denoise_strength,
+        };
+        let vf_filter = video_io::build_video_filter(&demux_opts, metadata.video_stream.is_interlaced());
 
-        // 1. Extract single frame via FFmpeg
-        let mut child = Command::new(&ffmpeg_bin)
-            .args([
-                "-ss",
-                &format!("{:.3}", timestamp_seconds),
-                "-i",
-            ])
-            .arg(path)
-            .args([
-                "-vframes",
-                "1",
-                "-f",
-                "rawvideo",
-                "-pix_fmt",
-                "rgb24",
-                "-v",
-                "error",
-                "-",
-            ])
+        // 1. Extract single frame via FFmpeg with optional deinterlace/denoise filter
+        let mut cmd = Command::new(&ffmpeg_bin);
+        cmd.args([
+            "-ss",
+            &format!("{:.3}", timestamp_seconds),
+            "-i",
+        ])
+        .arg(path);
+
+        if let Some(ref vf) = vf_filter {
+            cmd.args(["-vf", vf]);
+        }
+
+        cmd.args([
+            "-vframes",
+            "1",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "-v",
+            "error",
+            "-",
+        ]);
+
+        let mut child = cmd
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()

@@ -174,6 +174,8 @@ mod tests {
             film_grain: 0.1,
             temporal_mode: None,
             interpolation_mode: None,
+            deinterlace_mode: None,
+            denoise_strength: None,
             encoding_profile: OutputEncodingProfile::default(),
         }
     }

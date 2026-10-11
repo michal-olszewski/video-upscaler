@@ -55,13 +55,25 @@ impl UpscalePipeline {
         let fps = metadata.video_stream.frame_rate;
         let total_frames = metadata.video_stream.total_frames.unwrap_or(1).max(1);
 
+        let deinterlace_mode = request.deinterlace_mode.unwrap_or(video_io::DeinterlaceMode::Disabled);
+        let denoise_strength = request.denoise_strength.unwrap_or(0.0);
+
+        let (deint_fps_mult, deint_frames_mult) = if deinterlace_mode == video_io::DeinterlaceMode::BwdifBob {
+            (2.0, 2u64)
+        } else {
+            (1.0, 1u64)
+        };
+
+        let post_deint_fps = fps * deint_fps_mult;
+        let post_deint_frames = total_frames * deint_frames_mult;
+
         let interpolation_mode = request.interpolation_mode.unwrap_or(InterpolationMode::Disabled);
-        let out_fps = interpolation_mode.calculate_output_fps(fps);
-        let expected_total_frames = interpolation_mode.calculate_total_frames(total_frames);
+        let out_fps = interpolation_mode.calculate_output_fps(post_deint_fps);
+        let expected_total_frames = interpolation_mode.calculate_total_frames(post_deint_frames);
 
         info!(
-            "Job {}: Streaming {}x{} -> {}x{} @ {:.2} fps ({} source frames -> {} frames @ {:.2} fps) using {} with interpolation {:?}",
-            request.id, in_w, in_h, out_w, out_h, fps, total_frames, expected_total_frames, out_fps, model_desc.name, interpolation_mode
+            "Job {}: Streaming {}x{} -> {}x{} @ {:.2} fps ({} source frames -> {} frames @ {:.2} fps) using {} [Deint: {:?}, Denoise: {:.2}, Interp: {:?}]",
+            request.id, in_w, in_h, out_w, out_h, fps, total_frames, expected_total_frames, out_fps, model_desc.name, deinterlace_mode, denoise_strength, interpolation_mode
         );
 
         let tile_size = request.tile_size.unwrap_or(model_desc.default_tile_size);
@@ -113,8 +125,14 @@ impl UpscalePipeline {
         // ----------------------------------------------------
         // STAGE 1: Video Decode & Demux Worker (Producer)
         // ----------------------------------------------------
+        let demux_options = video_io::DemuxOptions {
+            high_bit_depth,
+            deinterlace_mode,
+            denoise_strength,
+        };
+
         let decode_task = tokio::task::spawn_blocking(move || -> Result<u64> {
-            let mut demuxer = VideoDemuxer::open_with_bit_depth(&input_path, high_bit_depth)?;
+            let mut demuxer = VideoDemuxer::open_with_options(&input_path, demux_options)?;
             let mut count = 0u64;
 
             while let Some(raw_frame) = demuxer.read_frame()? {

@@ -15,6 +15,7 @@ interface VideoStreamInfo {
   color_space?: string;
   color_primaries?: string;
   color_transfer?: string;
+  field_order?: string;
 }
 
 interface MediaMetadata {
@@ -76,6 +77,8 @@ export const App: React.FC = () => {
     encoder: 'hevc_amf',
     colorFormat: 'sdr_8bit',
     interpolationMode: 'Disabled',
+    deinterlaceMode: 'Disabled',
+    denoiseStrength: 0.0,
     crf: 18,
   });
 
@@ -214,6 +217,8 @@ export const App: React.FC = () => {
           model_id: settings.modelId,
           device_id: selectedDevice,
           film_grain: settings.filmGrain,
+          deinterlace_mode: settings.deinterlaceMode,
+          denoise_strength: settings.denoiseStrength,
         }),
       });
 
@@ -338,6 +343,8 @@ export const App: React.FC = () => {
       film_grain: settings.filmGrain,
       temporal_mode: settings.temporalMode,
       interpolation_mode: settings.interpolationMode,
+      deinterlace_mode: settings.deinterlaceMode,
+      denoise_strength: settings.denoiseStrength,
       encoding_profile: buildEncodingProfile(),
     };
 
@@ -382,6 +389,8 @@ export const App: React.FC = () => {
       film_grain: settings.filmGrain,
       temporal_mode: settings.temporalMode,
       interpolation_mode: settings.interpolationMode,
+      deinterlace_mode: settings.deinterlaceMode,
+      denoise_strength: settings.denoiseStrength,
       encoding_profile: buildEncodingProfile(),
     };
 
@@ -423,6 +432,8 @@ export const App: React.FC = () => {
           film_grain: settings.filmGrain,
           temporal_mode: settings.temporalMode,
           interpolation_mode: settings.interpolationMode,
+          deinterlace_mode: settings.deinterlaceMode,
+          denoise_strength: settings.denoiseStrength,
           encoding_profile: profile,
         };
         await fetch('/api/queue/add', {
@@ -621,6 +632,20 @@ export const App: React.FC = () => {
                         {metadata.video_stream.color_transfer === 'smpte2084' ? 'HDR10' : 'SDR'}
                       </strong>
                     </span>
+                    {metadata.video_stream.field_order &&
+                      metadata.video_stream.field_order !== 'progressive' &&
+                      metadata.video_stream.field_order !== 'unknown' && (
+                        <span
+                          className="meta-chip"
+                          style={{
+                            backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                            borderColor: '#ef4444',
+                            color: '#f87171',
+                          }}
+                        >
+                          <strong>INTERLACED ({metadata.video_stream.field_order.toUpperCase()})</strong>
+                        </span>
+                      )}
                   </div>
                 )}
               </div>

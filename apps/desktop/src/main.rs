@@ -45,6 +45,10 @@ struct PreviewRequest {
     #[serde(default)]
     #[allow(dead_code)]
     temporal_mode: Option<TemporalMode>,
+    #[serde(default)]
+    deinterlace_mode: Option<video_io::DeinterlaceMode>,
+    #[serde(default)]
+    denoise_strength: Option<f32>,
 }
 
 #[derive(Deserialize)]
@@ -259,8 +263,18 @@ async fn generate_preview(
     };
     let timestamp = payload.timestamp_seconds.unwrap_or(0.0);
     let grain = payload.film_grain.unwrap_or(0.1);
+    let deint = payload.deinterlace_mode.unwrap_or(video_io::DeinterlaceMode::Disabled);
+    let denoise = payload.denoise_strength.unwrap_or(0.0);
 
-    match PreviewEngine::generate_preview(&payload.path, timestamp, &payload.model_id, backend, grain) {
+    match PreviewEngine::generate_preview_with_options(
+        &payload.path,
+        timestamp,
+        &payload.model_id,
+        backend,
+        grain,
+        deint,
+        denoise,
+    ) {
         Ok(preview) => Ok(Json(preview)),
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,

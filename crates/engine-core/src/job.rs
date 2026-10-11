@@ -30,6 +30,10 @@ pub struct UpscaleJobRequest {
     pub temporal_mode: Option<TemporalMode>,
     #[serde(default)]
     pub interpolation_mode: Option<InterpolationMode>,
+    #[serde(default)]
+    pub deinterlace_mode: Option<video_io::DeinterlaceMode>,
+    #[serde(default)]
+    pub denoise_strength: Option<f32>,
     pub encoding_profile: OutputEncodingProfile,
 }
 

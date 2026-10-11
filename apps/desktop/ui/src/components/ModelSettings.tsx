@@ -25,6 +25,8 @@ export interface UpscaleSettings {
   crf: number;
   colorFormat: 'sdr_8bit' | 'hdr10_10bit' | 'sdr_10bit' | 'prores_hq';
   interpolationMode: 'Disabled' | 'DoubleFps' | 'QuadrupleFps' | 'SlowMotion2x' | 'SlowMotion4x';
+  deinterlaceMode: 'Disabled' | 'Auto' | 'BwdifSameRate' | 'BwdifBob' | 'Yadif';
+  denoiseStrength: number;
 }
 
 interface ModelSettingsProps {
@@ -120,6 +122,8 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
           encoder: 'av1_amf',
           colorFormat: 'sdr_8bit',
           interpolationMode: 'Disabled',
+          deinterlaceMode: 'Disabled',
+          denoiseStrength: 0.0,
           crf: 20,
         });
         break;
@@ -134,6 +138,8 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
           encoder: 'hevc_nvenc',
           colorFormat: 'hdr10_10bit',
           interpolationMode: 'DoubleFps',
+          deinterlaceMode: 'Disabled',
+          denoiseStrength: 0.0,
           crf: 16,
         });
         break;
@@ -148,6 +154,8 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
           encoder: 'hevc_nvenc',
           colorFormat: 'sdr_8bit',
           interpolationMode: 'Disabled',
+          deinterlaceMode: 'Disabled',
+          denoiseStrength: 0.0,
           crf: 18,
         });
         break;
@@ -157,11 +165,13 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
           modelId: 'compact-span-x2',
           scaleFactor: 2,
           tileSize: 768,
-          filmGrain: 0.20,
+          filmGrain: 0.15,
           temporalMode: 'Quality5Frame',
           encoder: 'prores_ks',
           colorFormat: 'prores_hq',
           interpolationMode: 'DoubleFps',
+          deinterlaceMode: 'Auto',
+          denoiseStrength: 0.35,
           crf: 16,
         });
         break;
@@ -301,6 +311,53 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
           {settings.interpolationMode === 'QuadrupleFps' && 'Hierarchical 4x optical flow interpolation targets high-refresh 120fps displays.'}
           {settings.interpolationMode === 'SlowMotion2x' && 'Synthesizes 2x intermediate frames while keeping native playback rate for smooth half-speed slow motion.'}
           {settings.interpolationMode === 'SlowMotion4x' && 'Synthesizes 4x intermediate frames for ultra-smooth 25% quarter-speed action playback.'}
+        </div>
+      </div>
+
+      <div className="section-title" style={{ marginTop: '20px' }}>Archival Broadcast & Pre-Pass</div>
+
+      <div className="form-group">
+        <label className="form-label">Deinterlacing Engine</label>
+        <select
+          className="select-input"
+          value={settings.deinterlaceMode}
+          onChange={(e) => update('deinterlaceMode', e.target.value as any)}
+        >
+          <option value="Disabled">Disabled (Progressive Footage)</option>
+          <option value="Auto">Auto-Detect Interlaced (bwdif)</option>
+          <option value="BwdifSameRate">Motion-Adaptive Same-Rate (bwdif mode 0 — 1:1 fps)</option>
+          <option value="BwdifBob">Fluid Field Bob (bwdif mode 1 — 50fps/60fps 2× fluid motion)</option>
+          <option value="Yadif">YADIF Adaptive (mode 0)</option>
+        </select>
+        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.4 }}>
+          {settings.deinterlaceMode === 'Disabled' && 'No deinterlacing applied. Assumes input is progressive.'}
+          {settings.deinterlaceMode === 'Auto' && 'Inspects container stream metadata and applies bwdif only if interlaced fields are detected.'}
+          {settings.deinterlaceMode === 'BwdifSameRate' && 'Bob-Weaver motion-adaptive deinterlacing preserving original container framerate and timeline duration.'}
+          {settings.deinterlaceMode === 'BwdifBob' && 'Doubles framerate by converting both top & bottom fields into full frames for broadcast fluid motion.'}
+          {settings.deinterlaceMode === 'Yadif' && 'Standard motion-adaptive Yadif filter for legacy broadcast interlacing.'}
+        </div>
+      </div>
+
+      <div className="form-group">
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+          <label className="form-label" style={{ margin: 0 }}>Archival Denoise Pass</label>
+          <span className="slider-value">{Math.round(settings.denoiseStrength * 100)}%</span>
+        </div>
+        <div className="slider-container">
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            className="range-slider"
+            value={settings.denoiseStrength}
+            onChange={(e) => update('denoiseStrength', parseFloat(e.target.value))}
+          />
+        </div>
+        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.4 }}>
+          {settings.denoiseStrength === 0
+            ? 'No denoising. Raw frames directly processed.'
+            : 'Applies 3D spatio-temporal noise reduction (hqdn3d) to eliminate VHS, DVD and analog sensor grain before upscaling.'}
         </div>
       </div>
 

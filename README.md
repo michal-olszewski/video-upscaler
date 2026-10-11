@@ -18,6 +18,7 @@ Powered by a decoupled **Rust engine core**, native hardware **DirectML (DirectX
 * **Bounded VRAM Ring-Buffer Architecture**: Zero-copy 3-stage pipeline isolating Decode (Producer), Neural Inference (Worker), and Hardware Encode (Consumer) via `tokio::sync::mpsc::channel(8)` backpressure. Safely upscale 4K/8K footage on GPUs with 4–8 GB VRAM.
 * **2D Hann-Window Apodization & Tiling**: Overlapped sub-tile spatial partitioning with smooth raised-cosine weight blending completely eliminates tile seams and grid artifacts.
 * **AI Motion Frame Interpolation & Slow-Motion (Topaz Chronos & DaVinci Speed Warp Parity)**: High-precision bidirectional optical-flow motion compensation and frame synthesis supporting $2\times$ FPS doubling (e.g. 24 → 48 fps, 30 → 60 fps), $4\times$ high-framerate conversion (e.g. 30 → 120 fps), and $2\times$/$4\times$ filmic slow-motion retiming while preserving perfect audio synchronization.
+* **Archival Broadcast Deinterlacing & Denoise Pass (Topaz Dione & DaVinci Parity)**: Motion-adaptive Bob-Weaver deinterlacing (`bwdif`) with automatic field-order detection (`TFF`/`BFF`) preserving 1:1 timeline duration or doubling to 50/60fps fluid motion, combined with 3D spatio-temporal noise reduction (`hqdn3d`) and edge-preserving bilateral filtering for vintage VHS, DVD, and analog restoration.
 * **10-Bit Color & HDR10 Passthrough (DaVinci Resolve Parity)**: Complete high bit depth video pipeline (`yuv420p10le`, `p010le`, `RGB48LE`) preserving BT.2020 color primaries and SMPTE 2084 PQ High Dynamic Range metadata without color clipping or banding.
 * **Next-Gen AV1 & ProRes Mastering**: Hardware AV1 encoding on AMD AMF (`av1_amf`) and NVIDIA NVENC (`av1_nvenc`), SVT-AV1 CPU encoding, and Apple ProRes 422 HQ 10-bit master output.
 * **Interactive Viewport Canvas Zoom & Pan (Topaz Parity)**: Cursor-centered mouse-wheel zoom ($50\% - 800\%$), click-and-drag pan, quick zoom presets (`Fit`, `100%`, `200%`, `400%`), and a mini-map crop navigator in the before/after comparison curtain.
@@ -55,12 +56,12 @@ All models download automatically inside the application with atomic `.part` val
 
 ## 🎛️ Workflow Presets
 
-| Preset | Model | Scale | Encoder | Quality (CRF) | Temporal Mode | Film Grain |
-| :--- | :--- | :---: | :--- | :---: | :--- | :---: |
-| **⚡ Web & Social** | Compact SPAN | $2\times$ | AMD AMF / NVENC | 20 | Fast 3-Frame | 8% |
-| **🎬 Cinematic 4K Master** | Real-ESRGAN x4plus | $4\times$ | NVENC / ProRes | 16 | Quality 5-Frame | 15% |
-| **✨ Anime & Animation** | Real-ESRGAN Anime | $4\times$ | NVENC / AMF | 18 | Fast 3-Frame | 2% |
-| **📼 Archival Restoration** | Compact SPAN | $2\times$ | Apple ProRes / x265 | 16 | Quality 5-Frame | 20% |
+| Preset | Model | Scale | Encoder | Quality (CRF) | Temporal Mode | Archival / Pre-Pass |
+| :--- | :--- | :---: | :--- | :---: | :--- | :--- |
+| **⚡ Web & Social** | Compact SPAN | $2\times$ | AMD AMF / NVENC | 20 | Fast 3-Frame | Grain 8%, Direct |
+| **🎬 Cinematic 4K Master** | Real-ESRGAN x4plus | $4\times$ | NVENC / ProRes | 16 | Quality 5-Frame | Grain 15%, 2× Motion |
+| **✨ Anime & Animation** | Real-ESRGAN Anime | $4\times$ | NVENC / AMF | 18 | Fast 3-Frame | Grain 2%, Crisp Edges |
+| **📼 Archival Restoration** | Compact SPAN | $2\times$ | Apple ProRes / x265 | 16 | Quality 5-Frame | Auto Deint (bwdif), Denoise 35% |
 
 ---
 
@@ -81,11 +82,12 @@ video-upscaler/
 │   ├── image-processing/                     # Computer vision & mathematics
 │   │   ├── src/tiling.rs                     # 2D Hann window overlapping grid decomposition
 │   │   ├── src/color.rs                      # Fast RGB24 <-> NCHW tensor conversions
-│   │   └── src/grain.rs                      # Film grain synthesis
+│   │   ├── src/grain.rs                      # Film grain synthesis
+│   │   └── src/denoise.rs                    # Edge-preserving bilateral spatial denoiser
 │   ├── video-io/                             # Hardware video streaming
-│   │   ├── src/demuxer.rs                    # FFmpeg streaming raw RGB24 demuxer
+│   │   ├── src/demuxer.rs                    # FFmpeg streaming demuxer with bwdif/hqdn3d filters
 │   │   ├── src/muxer.rs                      # FFmpeg hardware muxer (AMF, NVENC, VideoToolbox)
-│   │   ├── src/metadata.rs                   # FFprobe video and stream inspection
+│   │   ├── src/metadata.rs                   # FFprobe video, stream & interlacing inspection
 │   │   └── src/ffmpeg_bin.rs                 # Auto-discovery across Winget, PATH, and Homebrew
 │   ├── models/                               # Neural weights management
 │   │   ├── src/registry.rs                   # Catalog of supported ONNX super-resolution models
@@ -126,7 +128,7 @@ npm run build
 cd ../../..
 ```
 
-### 2. Run Workspace Test Suite (21 Tests)
+### 2. Run Workspace Test Suite (23 Tests)
 ```bash
 cargo test --workspace
 ```

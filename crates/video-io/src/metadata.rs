@@ -26,6 +26,7 @@ pub struct VideoStreamInfo {
     pub color_space: Option<String>,
     pub color_primaries: Option<String>,
     pub color_transfer: Option<String>,
+    pub field_order: Option<String>,
 }
 
 impl VideoStreamInfo {
@@ -44,6 +45,14 @@ impl VideoStreamInfo {
         self.color_transfer.as_deref() == Some("smpte2084")
             || self.color_transfer.as_deref() == Some("arib-std-b67")
             || self.color_primaries.as_deref() == Some("bt2020")
+    }
+
+    /// Determines whether the video stream is interlaced
+    pub fn is_interlaced(&self) -> bool {
+        match self.field_order.as_deref() {
+            Some("tt") | Some("bb") | Some("tb") | Some("bt") | Some("interlaced") => true,
+            _ => false,
+        }
     }
 }
 
@@ -193,6 +202,11 @@ impl MediaProbe {
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string());
 
+                    let field_order = stream
+                        .get("field_order")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+
                     video_info = Some(VideoStreamInfo {
                         index: idx,
                         codec_name,
@@ -205,6 +219,7 @@ impl MediaProbe {
                         color_space,
                         color_primaries,
                         color_transfer,
+                        field_order,
                     });
                 }
                 "audio" => {
