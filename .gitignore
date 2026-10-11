@@ -30,3 +30,5 @@ models/cache/
 temp/
 output/
 test_videos/
+*_upscaled.mp4
+samples/*_upscaled.mp4

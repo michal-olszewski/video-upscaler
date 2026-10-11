@@ -1,5 +1,19 @@
 import React from 'react';
 
+export interface ModelDescriptor {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  scale_factor: number;
+  temporal_window_frames: number;
+  default_tile_size: number;
+  default_padding: number;
+  supports_fp16: boolean;
+  filename: string;
+  download_url?: string;
+}
+
 export interface UpscaleSettings {
   modelId: string;
   scaleFactor: number;
@@ -10,13 +24,30 @@ export interface UpscaleSettings {
 }
 
 interface ModelSettingsProps {
+  models: ModelDescriptor[];
   settings: UpscaleSettings;
   onChange: (updated: UpscaleSettings) => void;
 }
 
-export const ModelSettings: React.FC<ModelSettingsProps> = ({ settings, onChange }) => {
+export const ModelSettings: React.FC<ModelSettingsProps> = ({ models, settings, onChange }) => {
   const update = <K extends keyof UpscaleSettings>(key: K, value: UpscaleSettings[K]) => {
     onChange({ ...settings, [key]: value });
+  };
+
+  const selectedModel = models.find((m) => m.id === settings.modelId);
+
+  const handleModelChange = (id: string) => {
+    const found = models.find((m) => m.id === id);
+    if (found) {
+      onChange({
+        ...settings,
+        modelId: id,
+        scaleFactor: found.scale_factor,
+        tileSize: found.default_tile_size,
+      });
+    } else {
+      update('modelId', id);
+    }
   };
 
   return (
@@ -28,13 +59,23 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ settings, onChange
         <select
           className="select-input"
           value={settings.modelId}
-          onChange={(e) => update('modelId', e.target.value)}
+          onChange={(e) => handleModelChange(e.target.value)}
         >
-          <option value="realesrgan-x4plus">Real-ESRGAN x4 Plus (Universal Cinematic)</option>
-          <option value="basicvsr-plusplus">BasicVSR++ (Temporal Consistent VSR)</option>
-          <option value="compact-span-x2">Compact SPAN (2x Real-Time Fast)</option>
-          <option value="realesrgan-anime-6b">Real-ESRGAN Anime 6B (Clean Lines)</option>
+          {models.length > 0 ? (
+            models.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name} ({m.scale_factor}x)
+              </option>
+            ))
+          ) : (
+            <option value="compact-span-x2">Compact SPAN (x2 Fast)</option>
+          )}
         </select>
+        {selectedModel && (
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.4 }}>
+            {selectedModel.description}
+          </div>
+        )}
       </div>
 
       <div className="form-group">
@@ -44,8 +85,8 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ settings, onChange
           value={settings.scaleFactor}
           onChange={(e) => update('scaleFactor', Number(e.target.value))}
         >
-          <option value={2}>2x Upscale (e.g. 1080p → 4K)</option>
-          <option value={4}>4x Upscale (e.g. 720p/1080p → 4K/8K)</option>
+          <option value={2}>2x Super Resolution (e.g. 1080p → 4K UHD)</option>
+          <option value={4}>4x Super Resolution (e.g. 720p/1080p → 4K/8K)</option>
         </select>
       </div>
 
@@ -58,8 +99,8 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ settings, onChange
         >
           <option value={384}>384 × 384 (Low VRAM / 4GB-6GB)</option>
           <option value={512}>512 × 512 (Recommended / 8GB VRAM)</option>
-          <option value={768}>768 × 768 (High VRAM / 12GB-16GB)</option>
-          <option value={0}>Auto / Full Frame (Apple Silicon Unified Memory)</option>
+          <option value={768}>768 × 768 (High VRAM / Fast)</option>
+          <option value={0}>Auto / Full Frame</option>
         </select>
       </div>
 
@@ -90,10 +131,10 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ settings, onChange
           value={settings.encoder}
           onChange={(e) => update('encoder', e.target.value)}
         >
-          <option value="hevc_nvenc">NVIDIA NVENC H.265 / HEVC</option>
-          <option value="hevc_amf">AMD AMF H.265 / HEVC</option>
-          <option value="hevc_videotoolbox">Apple VideoToolbox H.265 / HEVC</option>
-          <option value="libx265">Software CPU (x265 - Maximum Compression)</option>
+          <option value="hevc_amf">AMD AMF H.265 / HEVC (Radeon 890M Hardware)</option>
+          <option value="hevc_nvenc">NVIDIA NVENC H.265 / HEVC (RTX 4060 Hardware)</option>
+          <option value="hevc_videotoolbox">Apple VideoToolbox H.265 (Metal Hardware)</option>
+          <option value="libx265">Software CPU (x265 High Efficiency)</option>
           <option value="prores_ks">Apple ProRes 422 HQ (Master Quality)</option>
         </select>
       </div>

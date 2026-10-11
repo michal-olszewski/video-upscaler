@@ -26,19 +26,19 @@ impl UpscalePipeline {
         self.cancelled.store(true, Ordering::SeqCst);
     }
 
-    /// Runs the video upscale pipeline asynchronously, streaming progress updates via the channel
+    /// Runs the video upscale pipeline asynchronously using decoupled producer-consumer stages with backpressure
     pub async fn execute(
         &self,
         request: UpscaleJobRequest,
         progress_tx: mpsc::Sender<JobProgress>,
     ) -> Result<()> {
-        info!("Starting upscale pipeline for job: {}", request.id);
+        info!("Starting decoupled streaming upscale pipeline for job: {}", request.id);
 
         let model_desc = ModelRegistry::find_by_id(&request.model_id)
             .context(format!("Model not found: {}", request.model_id))?;
 
         let model_path = format!("models/cache/{}", model_desc.filename);
-        let session = InferenceSessionWrapper::new(&model_path, request.backend.clone())?;
+        let session = Arc::new(InferenceSessionWrapper::new(&model_path, request.backend.clone())?);
         let scale = model_desc.scale_factor as usize;
 
         // Probe input media metadata
@@ -53,7 +53,7 @@ impl UpscalePipeline {
         let total_frames = metadata.video_stream.total_frames.unwrap_or(1).max(1);
 
         info!(
-            "Job {}: Upscaling {}x{} -> {}x{} @ {:.2} fps ({} total frames) using {}",
+            "Job {}: Streaming {}x{} -> {}x{} @ {:.2} fps ({} total frames) using {}",
             request.id, in_w, in_h, out_w, out_h, fps, total_frames, model_desc.name
         );
 
@@ -67,95 +67,148 @@ impl UpscalePipeline {
             padding: tile_padding,
             scale,
         };
-        let tiling_engine = TilingEngine::new(tiling_spec);
+        let tiling_engine = Arc::new(TilingEngine::new(tiling_spec));
 
-        // Initialize Demuxer and Muxer
-        let mut demuxer = VideoDemuxer::open(&request.input_path)
-            .context("Failed to open video demuxer")?;
+        // Buffer limits in-flight uncompressed frames to prevent VRAM / RAM exhaustion
+        const RING_BUFFER_CAPACITY: usize = 8;
+        let (decode_tx, mut decode_rx) = mpsc::channel::<(u64, Vec<u8>)>(RING_BUFFER_CAPACITY);
+        let (infer_tx, mut infer_rx) = mpsc::channel::<(u64, Vec<u8>)>(RING_BUFFER_CAPACITY);
+
+        let cancelled_decode = Arc::clone(&self.cancelled);
+        let input_path = request.input_path.clone();
+
+        // ----------------------------------------------------
+        // STAGE 1: Video Decode & Demux Worker (Producer)
+        // ----------------------------------------------------
+        let decode_task = tokio::task::spawn_blocking(move || -> Result<u64> {
+            let mut demuxer = VideoDemuxer::open(&input_path)?;
+            let mut count = 0u64;
+
+            while let Some(raw_frame) = demuxer.read_frame()? {
+                if cancelled_decode.load(Ordering::SeqCst) {
+                    break;
+                }
+                if decode_tx.blocking_send((count, raw_frame)).is_err() {
+                    break;
+                }
+                count += 1;
+            }
+            Ok(count)
+        });
+
+        // ----------------------------------------------------
+        // STAGE 2: Tiling, DirectML Inference & Reconstruction
+        // ----------------------------------------------------
+        let cancelled_infer = Arc::clone(&self.cancelled);
+        let session_clone = Arc::clone(&session);
+        let tiling_clone = Arc::clone(&tiling_engine);
+        let film_grain = request.film_grain;
+
+        let infer_task = tokio::spawn(async move {
+            while let Some((frame_idx, raw_frame)) = decode_rx.recv().await {
+                if cancelled_infer.load(Ordering::SeqCst) {
+                    break;
+                }
+
+                // 1. Normalization
+                let in_tensor = ColorPipeline::rgb_bytes_to_nchw(&raw_frame, in_w, in_h);
+
+                // 2. Tiling & Tensor Inference
+                let tile_coords = tiling_clone.compute_tiles(in_w, in_h);
+                let mut tile_outputs = Vec::with_capacity(tile_coords.len());
+
+                for coord in tile_coords {
+                    let mut tile_in = Array4::<f32>::zeros((1, 3, coord.in_h, coord.in_w));
+                    for y in 0..coord.in_h {
+                        for x in 0..coord.in_w {
+                            for c in 0..3 {
+                                tile_in[[0, c, y, x]] = in_tensor[[0, c, coord.in_y + y, coord.in_x + x]];
+                            }
+                        }
+                    }
+
+                    let tile_out = session_clone.run_inference(&tile_in)?;
+                    tile_outputs.push((coord, tile_out));
+                }
+
+                // 3. 2D Hann reconstruction
+                let mut upscaled = tiling_clone.stitch_tiles(&tile_outputs, out_w, out_h);
+
+                // 4. Procedural film grain
+                if film_grain > 0.0 {
+                    ColorPipeline::apply_film_grain(&mut upscaled, film_grain);
+                }
+
+                let out_bytes = ColorPipeline::nchw_to_rgb_bytes(&upscaled);
+                if infer_tx.send((frame_idx, out_bytes)).await.is_err() {
+                    break;
+                }
+            }
+            Ok::<(), anyhow::Error>(())
+        });
+
+        // ----------------------------------------------------
+        // STAGE 3: Hardware Encode & Stream Muxer (Consumer)
+        // ----------------------------------------------------
+        let output_path = request.output_path.clone();
+        let encoding_profile = request.encoding_profile.clone();
+        let audio_src = request.input_path.clone();
+        let job_id = request.id.clone();
+        let cancelled_mux = Arc::clone(&self.cancelled);
+
+        let mut progress = JobProgress::new(job_id.clone(), total_frames);
+        progress.state = JobState::Processing;
+        let _ = progress_tx.send(progress.clone()).await;
 
         let mut muxer = VideoMuxer::open(
-            &request.output_path,
+            &output_path,
             out_w,
             out_h,
             fps,
-            &request.encoding_profile,
-            Some(&request.input_path),
-        )
-        .context("Failed to initialize video muxer")?;
-
-        let mut progress = JobProgress::new(request.id.clone(), total_frames);
-        progress.state = JobState::Processing;
+            &encoding_profile,
+            Some(&audio_src),
+        )?;
 
         let start_time = Instant::now();
-        let mut frame_idx = 0u64;
+        let mut processed_frames = 0u64;
 
-        while let Some(raw_frame) = demuxer.read_frame()? {
-            if self.cancelled.load(Ordering::SeqCst) {
+        while let Some((_idx, upscaled_bytes)) = infer_rx.recv().await {
+            if cancelled_mux.load(Ordering::SeqCst) {
                 progress.state = JobState::Cancelled;
                 let _ = progress_tx.send(progress).await;
-                info!("Pipeline cancelled by user.");
+                info!("Pipeline cancelled during encode.");
                 return Ok(());
             }
 
-            // 1. Convert raw RGB bytes to NCHW float tensor [0.0, 1.0]
-            let in_tensor = ColorPipeline::rgb_bytes_to_nchw(&raw_frame, in_w, in_h);
+            muxer.write_frame(&upscaled_bytes)?;
+            processed_frames += 1;
 
-            // 2. Partition into tiles
-            let tile_coords = tiling_engine.compute_tiles(in_w, in_h);
-            let mut tile_outputs = Vec::with_capacity(tile_coords.len());
-
-            for coord in tile_coords {
-                let mut tile_in = Array4::<f32>::zeros((1, 3, coord.in_h, coord.in_w));
-                for y in 0..coord.in_h {
-                    for x in 0..coord.in_w {
-                        for c in 0..3 {
-                            tile_in[[0, c, y, x]] = in_tensor[[0, c, coord.in_y + y, coord.in_x + x]];
-                        }
-                    }
-                }
-
-                // 3. Inference on tile (via DirectML / ONNX Session)
-                let tile_out = session.run_inference(&tile_in)?;
-                tile_outputs.push((coord, tile_out));
-            }
-
-            // 4. Stitch tiles back using 2D Hann window blending
-            let mut upscaled = tiling_engine.stitch_tiles(&tile_outputs, out_w, out_h);
-
-            // 5. Apply natural film grain if requested
-            if request.film_grain > 0.0 {
-                ColorPipeline::apply_film_grain(&mut upscaled, request.film_grain);
-            }
-
-            // 6. Convert back to RGB bytes and write to hardware encoder
-            let out_bytes = ColorPipeline::nchw_to_rgb_bytes(&upscaled);
-            muxer.write_frame(&out_bytes)?;
-
-            frame_idx += 1;
-
-            // Emit progress updates
             let elapsed = start_time.elapsed().as_secs_f64();
             let current_fps = if elapsed > 0.0 {
-                frame_idx as f64 / elapsed
+                processed_frames as f64 / elapsed
             } else {
                 0.0
             };
-            let remaining = total_frames.saturating_sub(frame_idx);
+            let remaining = total_frames.saturating_sub(processed_frames);
             let eta = if current_fps > 0.0 {
                 (remaining as f64 / current_fps) as u64
             } else {
                 0
             };
 
-            progress.current_frame = frame_idx;
-            progress.percentage = ((frame_idx as f32 / total_frames as f32) * 100.0).min(100.0);
+            progress.current_frame = processed_frames;
+            progress.percentage = ((processed_frames as f32 / total_frames as f32) * 100.0).min(100.0);
             progress.current_fps = current_fps;
             progress.eta_seconds = eta;
 
             let _ = progress_tx.send(progress.clone()).await;
         }
 
-        // Finalize encoding & container muxing
+        // Wait for workers to cleanly finish
+        let _ = decode_task.await?;
+        let _ = infer_task.await?;
+
+        // Finalize video container
         muxer.finish().context("Failed to finalize video output container")?;
 
         progress.state = JobState::Completed;
@@ -163,8 +216,15 @@ impl UpscalePipeline {
         let _ = progress_tx.send(progress).await;
 
         info!(
-            "Job {} successfully processed {} frames in {:.2?}",
-            request.id, frame_idx, start_time.elapsed()
+            "Job {}: Streamed {} frames in {:.2?} ({:.1} fps avg)",
+            job_id,
+            processed_frames,
+            start_time.elapsed(),
+            if start_time.elapsed().as_secs_f64() > 0.0 {
+                processed_frames as f64 / start_time.elapsed().as_secs_f64()
+            } else {
+                0.0
+            }
         );
 
         Ok(())
