@@ -38,16 +38,16 @@ jobs:
       - name: Package Windows Standalone Bundle
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Path "dist/VideoUpscalerStudio-Windows" -Force
-          Copy-Item "target/release/desktop.exe" "dist/VideoUpscalerStudio-Windows/"
-          Copy-Item -Recurse "apps/desktop/ui/dist" "dist/VideoUpscalerStudio-Windows/apps/desktop/ui/dist"
-          Compress-Archive -Path "dist/VideoUpscalerStudio-Windows/*" -DestinationPath "dist/VideoUpscalerStudio-Windows-x64.zip"
+          New-Item -ItemType Directory -Path "dist/VideoUpscaler-Windows" -Force
+          Copy-Item "target/release/video-upscaler.exe" "dist/VideoUpscaler-Windows/Video Upscaler.exe"
+          Copy-Item -Recurse "apps/desktop/ui/dist" "dist/VideoUpscaler-Windows/apps/desktop/ui/dist"
+          Compress-Archive -Path "dist/VideoUpscaler-Windows/*" -DestinationPath "dist/VideoUpscaler-Windows-x64.zip"
 
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: VideoUpscalerStudio-Windows-x64
-          path: dist/VideoUpscalerStudio-Windows-x64.zip
+          name: VideoUpscaler-Windows-x64
+          path: dist/VideoUpscaler-Windows-x64.zip
 
   build-macos:
     name: macOS Apple Silicon (CoreML + Metal)
@@ -77,15 +77,15 @@ jobs:
 
       - name: Package macOS Application Bundle
         run: |
-          mkdir -p "dist/Video Upscaler Studio.app/Contents/MacOS"
-          mkdir -p "dist/Video Upscaler Studio.app/Contents/Resources/apps/desktop/ui"
-          cp "target/aarch64-apple-darwin/release/desktop" "dist/Video Upscaler Studio.app/Contents/MacOS/VideoUpscalerStudio"
-          cp -r "apps/desktop/ui/dist" "dist/Video Upscaler Studio.app/Contents/Resources/apps/desktop/ui/dist"
-          chmod +x "dist/Video Upscaler Studio.app/Contents/MacOS/VideoUpscalerStudio"
-          cd dist && zip -r "VideoUpscalerStudio-macOS-AppleSilicon.zip" "Video Upscaler Studio.app"
+          mkdir -p "dist/Video Upscaler.app/Contents/MacOS"
+          mkdir -p "dist/Video Upscaler.app/Contents/Resources/apps/desktop/ui"
+          cp "target/aarch64-apple-darwin/release/video-upscaler" "dist/Video Upscaler.app/Contents/MacOS/Video Upscaler"
+          cp -r "apps/desktop/ui/dist" "dist/Video Upscaler.app/Contents/Resources/apps/desktop/ui/dist"
+          chmod +x "dist/Video Upscaler.app/Contents/MacOS/Video Upscaler"
+          cd dist && zip -r "VideoUpscaler-macOS-AppleSilicon.zip" "Video Upscaler.app"
 
       - name: Upload macOS Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: VideoUpscalerStudio-macOS-AppleSilicon
-          path: dist/VideoUpscalerStudio-macOS-AppleSilicon.zip
+          name: VideoUpscaler-macOS-AppleSilicon
+          path: dist/VideoUpscaler-macOS-AppleSilicon.zip

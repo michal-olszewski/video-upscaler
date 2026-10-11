@@ -5,6 +5,10 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
+[[bin]]
+name = "video-upscaler"
+path = "src/main.rs"
+
 [dependencies]
 engine-core = { path = "../../crates/engine-core" }
 inference-runtime = { path = "../../crates/inference-runtime" }
