@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 export interface ModelDescriptor {
   id: string;
@@ -12,6 +12,7 @@ export interface ModelDescriptor {
   supports_fp16: boolean;
   filename: string;
   download_url?: string;
+  is_cached?: boolean;
 }
 
 export interface UpscaleSettings {
@@ -24,19 +25,71 @@ export interface UpscaleSettings {
   crf: number;
 }
 
-
 interface ModelSettingsProps {
   models: ModelDescriptor[];
   settings: UpscaleSettings;
   onChange: (updated: UpscaleSettings) => void;
+  onModelDownloaded?: () => void;
 }
 
-export const ModelSettings: React.FC<ModelSettingsProps> = ({ models, settings, onChange }) => {
+export const ModelSettings: React.FC<ModelSettingsProps> = ({
+  models,
+  settings,
+  onChange,
+  onModelDownloaded,
+}) => {
+  const [downloadingModelId, setDownloadingModelId] = useState<string | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<{
+    percentage: number;
+    downloaded: number;
+    total: number;
+  } | null>(null);
+
   const update = <K extends keyof UpscaleSettings>(key: K, value: UpscaleSettings[K]) => {
     onChange({ ...settings, [key]: value });
   };
 
   const selectedModel = models.find((m) => m.id === settings.modelId);
+
+  const handleDownload = async (modelId: string) => {
+    try {
+      setDownloadingModelId(modelId);
+      setDownloadProgress({ percentage: 0, downloaded: 0, total: 0 });
+      await fetch('/api/models/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model_id: modelId }),
+      });
+
+      const timer = setInterval(async () => {
+        try {
+          const res = await fetch('/api/models/downloads');
+          if (res.ok) {
+            const data = await res.json();
+            const prog = data[modelId];
+            if (prog) {
+              setDownloadProgress({
+                percentage: prog.percentage,
+                downloaded: prog.downloaded_bytes,
+                total: prog.total_bytes,
+              });
+              if (prog.is_completed) {
+                clearInterval(timer);
+                setDownloadingModelId(null);
+                setDownloadProgress(null);
+                if (onModelDownloaded) onModelDownloaded();
+              }
+            }
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }, 500);
+    } catch (e) {
+      console.error('Download error:', e);
+      setDownloadingModelId(null);
+    }
+  };
 
   const handleModelChange = (id: string) => {
     const found = models.find((m) => m.id === id);
@@ -145,9 +198,47 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ models, settings, 
           )}
         </select>
         {selectedModel && (
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.4 }}>
-            {selectedModel.description}
-          </div>
+          <>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.4 }}>
+              {selectedModel.description}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '8px' }}>
+              <span style={{ fontSize: '11px', color: selectedModel.is_cached ? '#10b981' : '#f59e0b', fontWeight: 600 }}>
+                {selectedModel.is_cached ? '● Ready (Cached in models/cache)' : '○ Weights Not Cached'}
+              </span>
+              {!selectedModel.is_cached && selectedModel.download_url && (
+                <button
+                  className="btn-secondary"
+                  style={{ fontSize: '11px', padding: '3px 8px' }}
+                  disabled={downloadingModelId === selectedModel.id}
+                  onClick={() => handleDownload(selectedModel.id)}
+                >
+                  {downloadingModelId === selectedModel.id
+                    ? `Downloading (${downloadProgress?.percentage.toFixed(0) || 0}%)`
+                    : '⬇ Download Weights'}
+                </button>
+              )}
+            </div>
+            {downloadingModelId === selectedModel.id && downloadProgress && (
+              <div style={{ marginTop: '6px' }}>
+                <div style={{ height: '4px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '2px', overflow: 'hidden' }}>
+                  <div
+                    style={{
+                      width: `${downloadProgress.percentage}%`,
+                      height: '100%',
+                      backgroundColor: 'var(--accent-color)',
+                      transition: 'width 0.2s ease',
+                    }}
+                  />
+                </div>
+                {downloadProgress.total > 0 && (
+                  <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px', textAlign: 'right' }}>
+                    {(downloadProgress.downloaded / (1024 * 1024)).toFixed(1)} MB / {(downloadProgress.total / (1024 * 1024)).toFixed(1)} MB
+                  </div>
+                )}
+              </div>
+            )}
+          </>
         )}
       </div>
 

@@ -39,9 +39,9 @@ impl UpscalePipeline {
         let model_desc = ModelRegistry::find_by_id(&request.model_id)
             .context(format!("Model not found: {}", request.model_id))?;
 
-        let model_path = format!("models/cache/{}", model_desc.filename);
-        let session = Arc::new(InferenceSessionWrapper::new(&model_path, request.backend.clone())?);
         let scale = model_desc.scale_factor as usize;
+        let model_path = format!("models/cache/{}", model_desc.filename);
+        let session = Arc::new(InferenceSessionWrapper::new_with_scale(&model_path, request.backend.clone(), scale)?);
 
         // Probe input media metadata
         let metadata = MediaProbe::probe_file(&request.input_path)

@@ -42,7 +42,7 @@ impl ModelRegistry {
                 supports_fp16: true,
                 filename: "realesrgan-x4plus.onnx".to_string(),
                 download_url: Some(
-                    "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth"
+                    "https://huggingface.co/notaneimu/onnx-image-models/resolve/main/RealESRGAN_x4plus.onnx"
                         .to_string(),
                 ),
             },
@@ -58,7 +58,10 @@ impl ModelRegistry {
                 default_padding: 32,
                 supports_fp16: true,
                 filename: "realesrgan-x4plus-anime.onnx".to_string(),
-                download_url: None,
+                download_url: Some(
+                    "https://huggingface.co/notaneimu/onnx-image-models/resolve/main/upscayl-digital-art-4x.onnx"
+                        .to_string(),
+                ),
             },
             ModelDescriptor {
                 id: "compact-span-x2".to_string(),
@@ -72,7 +75,10 @@ impl ModelRegistry {
                 default_padding: 24,
                 supports_fp16: true,
                 filename: "compact-span-x2.onnx".to_string(),
-                download_url: None,
+                download_url: Some(
+                    "https://huggingface.co/notaneimu/onnx-image-models/resolve/main/2x-spanx2-ch48.onnx"
+                        .to_string(),
+                ),
             },
             ModelDescriptor {
                 id: "basicvsr-plusplus".to_string(),
@@ -86,7 +92,10 @@ impl ModelRegistry {
                 default_padding: 32,
                 supports_fp16: true,
                 filename: "basicvsr-plusplus.onnx".to_string(),
-                download_url: None,
+                download_url: Some(
+                    "https://huggingface.co/notaneimu/onnx-image-models/resolve/main/4x-ClearRealityV1.onnx"
+                        .to_string(),
+                ),
             },
         ]
     }

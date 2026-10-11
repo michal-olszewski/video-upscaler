@@ -166,4 +166,16 @@ mod tests {
         let serialized = serde_json::to_string(&prog).unwrap();
         assert!(serialized.contains("50.0"));
     }
+
+    #[test]
+    fn test_registry_models_have_valid_urls() {
+        let models = ModelRegistry::list_models();
+        assert!(!models.is_empty());
+        for m in models {
+            assert!(m.download_url.is_some());
+            let url = m.download_url.unwrap();
+            assert!(url.starts_with("https://"));
+            assert!(url.ends_with(".onnx"));
+        }
+    }
 }

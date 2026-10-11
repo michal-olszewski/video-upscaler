@@ -80,7 +80,7 @@ impl PreviewEngine {
         let out_h = in_h * scale;
 
         let model_path = format!("models/cache/{}", model_desc.filename);
-        let session = InferenceSessionWrapper::new(&model_path, backend)?;
+        let session = InferenceSessionWrapper::new_with_scale(&model_path, backend, scale)?;
 
         let tiling_spec = TileSpec {
             tile_size: model_desc.default_tile_size,

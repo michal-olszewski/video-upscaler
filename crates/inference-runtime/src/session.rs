@@ -16,16 +16,24 @@ pub struct InferenceSessionWrapper {
 }
 
 impl InferenceSessionWrapper {
-    /// Creates a new inference session binding to the target hardware execution provider
+    /// Creates a new inference session binding to the target hardware execution provider with default scale factor (2x)
     pub fn new<P: AsRef<Path>>(model_path: P, backend: ExecutionBackend) -> Result<Self> {
+        Self::new_with_scale(model_path, backend, 2)
+    }
+
+    /// Creates a new inference session binding to the target hardware execution provider with a custom scale factor
+    pub fn new_with_scale<P: AsRef<Path>>(
+        model_path: P,
+        backend: ExecutionBackend,
+        scale: usize,
+    ) -> Result<Self> {
         let path_buf = model_path.as_ref().to_path_buf();
         info!(
-            "Initializing ONNX session with model {:?} on backend: {}",
-            path_buf, backend
+            "Initializing ONNX session with model {:?} (scale {}x) on backend: {}",
+            path_buf, scale, backend
         );
 
         let mut session = None;
-        let scale = 2; // Compact SPAN is 2x
 
         if path_buf.exists() {
             let mut builder = Session::builder()
@@ -42,6 +50,28 @@ impl InferenceSessionWrapper {
                     builder = builder
                         .with_execution_providers([dml.build()])
                         .map_err(|e| anyhow::anyhow!("Failed to register DirectML provider: {:?}", e))?;
+                }
+                ExecutionBackend::CoreMl { use_ane } => {
+                    info!("Configuring Apple CoreML Execution Provider (use_ane: {})", use_ane);
+                    #[cfg(target_os = "macos")]
+                    {
+                        let coreml = ort::ep::CoreML::default();
+                        builder = builder
+                            .with_execution_providers([coreml.build()])
+                            .map_err(|e| anyhow::anyhow!("Failed to register CoreML provider: {:?}", e))?;
+                    }
+                    #[cfg(not(target_os = "macos"))]
+                    {
+                        info!("CoreML is native to Apple Silicon; using host compute provider fallback.");
+                    }
+                }
+                ExecutionBackend::Cuda { device_id } => {
+                    info!("Registering GPU Execution Provider for CUDA device ID {}", device_id);
+                    // On Windows, DirectML can also target NVIDIA GPUs via DirectX 12 Compute
+                    let dml = DirectML::default().with_device_id(*device_id as i32);
+                    builder = builder
+                        .with_execution_providers([dml.build()])
+                        .map_err(|e| anyhow::anyhow!("Failed to register DirectML provider for CUDA device: {:?}", e))?;
                 }
                 ExecutionBackend::Cpu { thread_count } => {
                     info!("Registering CPU Execution Provider with {} threads", thread_count);
@@ -139,5 +169,48 @@ impl InferenceSessionWrapper {
         }
 
         Ok(output)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_inference_session_fallback_2x() {
+        let session = InferenceSessionWrapper::new("nonexistent.onnx", ExecutionBackend::Cpu { thread_count: 1 }).unwrap();
+        let input = Array4::<f32>::ones((1, 3, 16, 16));
+        let output = session.run_inference(&input).unwrap();
+        assert_eq!(output.dim(), (1, 3, 32, 32));
+    }
+
+    #[test]
+    fn test_inference_session_fallback_4x() {
+        let session = InferenceSessionWrapper::new_with_scale("nonexistent.onnx", ExecutionBackend::Cpu { thread_count: 1 }, 4).unwrap();
+        let input = Array4::<f32>::ones((1, 3, 16, 16));
+        let output = session.run_inference(&input).unwrap();
+        assert_eq!(output.dim(), (1, 3, 64, 64));
+    }
+
+    #[test]
+    fn test_real_compact_span_model_inference_if_present() {
+        let model_path = PathBuf::from("models/cache/compact-span-x2.onnx");
+        if model_path.exists() {
+            let session = InferenceSessionWrapper::new_with_scale(&model_path, ExecutionBackend::Cpu { thread_count: 2 }, 2).unwrap();
+            let input = Array4::<f32>::ones((1, 3, 32, 32));
+            let output = session.run_inference(&input).unwrap();
+            assert_eq!(output.dim(), (1, 3, 64, 64));
+        }
+    }
+
+    #[test]
+    fn test_real_compact_span_directml_inference_if_present() {
+        let model_path = PathBuf::from("models/cache/compact-span-x2.onnx");
+        if model_path.exists() {
+            let session = InferenceSessionWrapper::new_with_scale(&model_path, ExecutionBackend::DirectMl { device_id: 0 }, 2).unwrap();
+            let input = Array4::<f32>::ones((1, 3, 32, 32));
+            let output = session.run_inference(&input).unwrap();
+            assert_eq!(output.dim(), (1, 3, 64, 64));
+        }
     }
 }

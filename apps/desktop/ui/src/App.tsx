@@ -73,18 +73,7 @@ export const App: React.FC = () => {
     crf: 18,
   });
 
-  // Load hardware devices and models on startup
-  useEffect(() => {
-    fetch('/api/devices')
-      .then((r) => r.json())
-      .then((data: DeviceInfo[]) => {
-        setDevices(data);
-        if (data.length > 0) {
-          setSelectedDevice(data[0].id);
-        }
-      })
-      .catch((err) => console.error('Failed to query devices:', err));
-
+  const loadModels = () => {
     fetch('/api/models')
       .then((r) => r.json())
       .then((data: ModelDescriptor[]) => {
@@ -100,6 +89,21 @@ export const App: React.FC = () => {
         }
       })
       .catch((err) => console.error('Failed to query models:', err));
+  };
+
+  // Load hardware devices and models on startup
+  useEffect(() => {
+    fetch('/api/devices')
+      .then((r) => r.json())
+      .then((data: DeviceInfo[]) => {
+        setDevices(data);
+        if (data.length > 0) {
+          setSelectedDevice(data[0].id);
+        }
+      })
+      .catch((err) => console.error('Failed to query devices:', err));
+
+    loadModels();
 
     // Auto-probe initial sample if present
     handleProbeMedia('samples/sample_test.mp4');
@@ -701,6 +705,7 @@ export const App: React.FC = () => {
             models={models}
             settings={settings}
             onChange={setSettings}
+            onModelDownloaded={loadModels}
           />
 
           <div className="sidebar-section">
