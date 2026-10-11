@@ -110,3 +110,67 @@ fn test_video_demux_and_mux_pipeline() {
     let _ = std::fs::remove_file(test_input);
     let _ = std::fs::remove_file(test_output);
 }
+
+#[test]
+fn test_10bit_hdr10_pipeline_muxing() {
+    let temp_dir = std::env::temp_dir().join("video_upscaler_tests");
+    let _ = std::fs::create_dir_all(&temp_dir);
+
+    let test_output = temp_dir.join("synthetic_hdr10_output.mp4");
+
+    // 1. Configure 10-bit HDR10 profile (BT.2020 + SMPTE 2084 PQ)
+    let profile = OutputEncodingProfile::hdr10(
+        HardwareEncoder::SoftwareCpu(VideoCodecType::H265Hevc),
+        24,
+    );
+    assert!(profile.is_hdr());
+    assert!(profile.high_bit_depth);
+    assert_eq!(profile.pixel_format, "yuv420p10le");
+
+    // 2. Open muxer for 10-bit HDR10 (160x120 @ 30fps)
+    let mut muxer = VideoMuxer::open(
+        &test_output,
+        160,
+        120,
+        30.0,
+        &profile,
+        None::<&std::path::Path>,
+    )
+    .expect("Failed to open 10-bit HDR10 muxer");
+
+    // 3. Generate 10 frames of 16-bit RGB48LE gradient data (160 * 120 * 6 bytes per frame)
+    let frame_bytes_count = 160 * 120 * 6;
+    let mut rgb48_frame = vec![0u8; frame_bytes_count];
+    for y in 0..120 {
+        for x in 0..160 {
+            let idx = (y * 160 + x) * 6;
+            // 10-bit value mapped into 16-bit range [0..65535]
+            let val = ((x * 65535) / 160) as u16;
+            rgb48_frame[idx..idx + 2].copy_from_slice(&val.to_le_bytes());
+            rgb48_frame[idx + 2..idx + 4].copy_from_slice(&val.to_le_bytes());
+            rgb48_frame[idx + 4..idx + 6].copy_from_slice(&val.to_le_bytes());
+        }
+    }
+
+    for _ in 0..10 {
+        muxer.write_frame(&rgb48_frame).expect("Failed to write 10-bit frame");
+    }
+
+    let written = muxer.finish().expect("Failed to finish 10-bit muxing");
+    assert_eq!(written, 10);
+
+    // 4. Verify probe detects 10-bit depth and HDR metadata tags
+    let out_meta = MediaProbe::probe_file(&test_output).expect("Probe 10-bit HDR10 output error");
+    assert_eq!(out_meta.video_stream.width, 160);
+    assert_eq!(out_meta.video_stream.height, 120);
+    assert!(
+        out_meta.video_stream.is_high_bit_depth(),
+        "Expected high bit depth stream, got pix_fmt: {}",
+        out_meta.video_stream.pixel_format
+    );
+    assert_eq!(out_meta.video_stream.pixel_format, "yuv420p10le");
+    assert!(out_meta.video_stream.is_hdr(), "Expected stream to be flagged as HDR");
+
+    let _ = std::fs::remove_file(test_output);
+}
+

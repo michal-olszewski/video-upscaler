@@ -28,6 +28,25 @@ pub struct VideoStreamInfo {
     pub color_transfer: Option<String>,
 }
 
+impl VideoStreamInfo {
+    /// Determines whether the video stream is high bit depth (10-bit, 12-bit, or 16-bit)
+    pub fn is_high_bit_depth(&self) -> bool {
+        self.pixel_format.contains("10")
+            || self.pixel_format.contains("12")
+            || self.pixel_format.contains("16")
+            || self.pixel_format.contains("p010")
+            || self.codec_name.to_lowercase().contains("prores")
+            || self.codec_name.to_lowercase().contains("dnxhd")
+    }
+
+    /// Determines whether the video stream contains High Dynamic Range (HDR) metadata
+    pub fn is_hdr(&self) -> bool {
+        self.color_transfer.as_deref() == Some("smpte2084")
+            || self.color_transfer.as_deref() == Some("arib-std-b67")
+            || self.color_primaries.as_deref() == Some("bt2020")
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubtitleStreamInfo {
     pub index: usize,

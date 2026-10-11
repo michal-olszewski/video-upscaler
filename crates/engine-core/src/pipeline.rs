@@ -71,6 +71,32 @@ impl UpscalePipeline {
         };
         let tiling_engine = Arc::new(TilingEngine::new(tiling_spec));
 
+        // Determine high bit depth mode (10-bit/12-bit/16-bit pipeline)
+        let high_bit_depth = request.encoding_profile.high_bit_depth
+            || metadata.video_stream.is_high_bit_depth()
+            || request.encoding_profile.pixel_format.contains("10le")
+            || request.encoding_profile.pixel_format.contains("p010")
+            || request.encoding_profile.pixel_format.contains("422p10");
+
+        let mut final_encoding_profile = request.encoding_profile.clone();
+        final_encoding_profile.high_bit_depth = high_bit_depth;
+        if final_encoding_profile.color_primaries.is_none() {
+            final_encoding_profile.color_primaries = metadata.video_stream.color_primaries.clone();
+        }
+        if final_encoding_profile.color_transfer.is_none() {
+            final_encoding_profile.color_transfer = metadata.video_stream.color_transfer.clone();
+        }
+        if final_encoding_profile.color_space.is_none() {
+            final_encoding_profile.color_space = metadata.video_stream.color_space.clone();
+        }
+
+        if high_bit_depth {
+            info!(
+                "Job {}: High bit depth (10-bit/16-bit) processing enabled with pixel format {}",
+                request.id, final_encoding_profile.pixel_format
+            );
+        }
+
         // Buffer limits in-flight uncompressed frames to prevent VRAM / RAM exhaustion
         const RING_BUFFER_CAPACITY: usize = 8;
         let (decode_tx, mut decode_rx) = mpsc::channel::<(u64, Vec<u8>)>(RING_BUFFER_CAPACITY);
@@ -83,7 +109,7 @@ impl UpscalePipeline {
         // STAGE 1: Video Decode & Demux Worker (Producer)
         // ----------------------------------------------------
         let decode_task = tokio::task::spawn_blocking(move || -> Result<u64> {
-            let mut demuxer = VideoDemuxer::open(&input_path)?;
+            let mut demuxer = VideoDemuxer::open_with_bit_depth(&input_path, high_bit_depth)?;
             let mut count = 0u64;
 
             while let Some(raw_frame) = demuxer.read_frame()? {
@@ -112,7 +138,11 @@ impl UpscalePipeline {
             let mut recent_upscaled: std::collections::VecDeque<Array4<f32>> = std::collections::VecDeque::new();
 
             let upscale_frame = |raw_bytes: &[u8]| -> Result<Array4<f32>> {
-                let in_tensor = ColorPipeline::rgb_bytes_to_nchw(raw_bytes, in_w, in_h);
+                let in_tensor = if high_bit_depth {
+                    ColorPipeline::rgb48_bytes_to_nchw(raw_bytes, in_w, in_h)
+                } else {
+                    ColorPipeline::rgb_bytes_to_nchw(raw_bytes, in_w, in_h)
+                };
                 let tile_coords = tiling_clone.compute_tiles(in_w, in_h);
                 let mut tile_outputs = Vec::with_capacity(tile_coords.len());
 
@@ -131,6 +161,14 @@ impl UpscalePipeline {
                 }
 
                 Ok(tiling_clone.stitch_tiles(&tile_outputs, out_w, out_h))
+            };
+
+            let convert_out = |upscaled: &Array4<f32>| -> Vec<u8> {
+                if high_bit_depth {
+                    ColorPipeline::nchw_to_rgb48_bytes(upscaled)
+                } else {
+                    ColorPipeline::nchw_to_rgb_bytes(upscaled)
+                }
             };
 
             while let Some((frame_idx, raw_frame)) = decode_rx.recv().await {
@@ -160,7 +198,7 @@ impl UpscalePipeline {
                         ColorPipeline::apply_film_grain(&mut upscaled, film_grain);
                     }
 
-                    let out_bytes = ColorPipeline::nchw_to_rgb_bytes(&upscaled);
+                    let out_bytes = convert_out(&upscaled);
                     if infer_tx.send((window.target_index, out_bytes)).await.is_err() {
                         return Ok(());
                     }
@@ -187,7 +225,7 @@ impl UpscalePipeline {
                     ColorPipeline::apply_film_grain(&mut upscaled, film_grain);
                 }
 
-                let out_bytes = ColorPipeline::nchw_to_rgb_bytes(&upscaled);
+                let out_bytes = convert_out(&upscaled);
                 if infer_tx.send((window.target_index, out_bytes)).await.is_err() {
                     return Ok(());
                 }
@@ -201,7 +239,7 @@ impl UpscalePipeline {
         // STAGE 3: Hardware Encode & Stream Muxer (Consumer)
         // ----------------------------------------------------
         let output_path = request.output_path.clone();
-        let encoding_profile = request.encoding_profile.clone();
+        let encoding_profile = final_encoding_profile;
         let audio_src = request.input_path.clone();
         let job_id = request.id.clone();
         let cancelled_mux = Arc::clone(&self.cancelled);

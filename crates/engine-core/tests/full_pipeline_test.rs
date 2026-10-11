@@ -89,3 +89,90 @@ async fn test_full_video_upscale_pipeline() {
     let _ = std::fs::remove_file(test_in);
     let _ = std::fs::remove_file(test_out);
 }
+
+#[tokio::test]
+async fn test_full_10bit_hdr10_upscale_pipeline() {
+    let temp_dir = std::env::temp_dir().join("video_upscaler_engine_tests");
+    let _ = std::fs::create_dir_all(&temp_dir);
+
+    let test_in = temp_dir.join("input_hdr_160x120.mp4");
+    let test_out = temp_dir.join("upscaled_hdr_320x240.mp4");
+
+    let ffmpeg_bin = FfmpegLocator::find_ffmpeg().expect("FFmpeg must be found");
+
+    // 1. Generate synthetic 10-bit test video (10 frames, 160x120) with audio
+    let gen_status = std::process::Command::new(&ffmpeg_bin)
+        .args([
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=duration=0.33:size=160x120:rate=30",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=0.33",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+        ])
+        .arg(&test_in)
+        .output()
+        .expect("Failed to create test video");
+
+    assert!(gen_status.status.success(), "FFmpeg generation failed");
+
+    // 2. Set up upscale job request targeting 10-bit HDR10 export profile
+    let hdr_profile = OutputEncodingProfile::hdr10(
+        video_io::HardwareEncoder::SoftwareCpu(video_io::VideoCodecType::H265Hevc),
+        22,
+    );
+
+    let request = UpscaleJobRequest {
+        id: "job-hdr-test-002".to_string(),
+        input_path: test_in.to_string_lossy().to_string(),
+        output_path: test_out.to_string_lossy().to_string(),
+        model_id: "compact-span-x2".to_string(),
+        backend: ExecutionBackend::DirectMl { device_id: 0 },
+        tile_size: Some(128),
+        tile_padding: Some(16),
+        film_grain: 0.05,
+        temporal_mode: Some(engine_core::temporal::TemporalMode::Fast3Frame),
+        encoding_profile: hdr_profile,
+    };
+
+    let (tx, mut rx) = mpsc::channel::<JobProgress>(64);
+    let pipeline = UpscalePipeline::new();
+
+    let pipeline_handle = tokio::spawn(async move {
+        pipeline.execute(request, tx).await
+    });
+
+    let mut final_progress = None;
+    while let Some(progress) = rx.recv().await {
+        final_progress = Some(progress);
+    }
+
+    let result = pipeline_handle.await.expect("Task join error");
+    assert!(result.is_ok(), "Pipeline execution failed: {:?}", result.err());
+
+    let last_prog = final_progress.expect("Expected progress");
+    assert_eq!(last_prog.state, JobState::Completed);
+
+    // 3. Verify output video is 10-bit HDR10 and 2x resolution
+    assert!(test_out.exists(), "Output HDR file must exist");
+    let out_meta = MediaProbe::probe_file(&test_out).expect("Failed to probe output video");
+
+    assert_eq!(out_meta.video_stream.width, 320);
+    assert_eq!(out_meta.video_stream.height, 240);
+    assert_eq!(out_meta.video_stream.pixel_format, "yuv420p10le");
+    assert!(out_meta.video_stream.is_high_bit_depth());
+    assert!(out_meta.video_stream.is_hdr());
+
+    let _ = std::fs::remove_file(test_in);
+    let _ = std::fs::remove_file(test_out);
+}
+

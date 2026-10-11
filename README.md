@@ -17,10 +17,12 @@ Powered by a decoupled **Rust engine core**, native hardware **DirectML (DirectX
 * **Dual-Mode Temporal Flicker Suppression**: Eliminates high-frequency inter-frame texture shimmering using edge-aware bilateral temporal fusion ($T=3$ Fast vs. $T=5$ Quality) with strict 1:1 frame count invariance.
 * **Bounded VRAM Ring-Buffer Architecture**: Zero-copy 3-stage pipeline isolating Decode (Producer), Neural Inference (Worker), and Hardware Encode (Consumer) via `tokio::sync::mpsc::channel(8)` backpressure. Safely upscale 4K/8K footage on GPUs with 4–8 GB VRAM.
 * **2D Hann-Window Apodization & Tiling**: Overlapped sub-tile spatial partitioning with smooth raised-cosine weight blending completely eliminates tile seams and grid artifacts.
+* **10-Bit Color & HDR10 Passthrough (DaVinci Resolve Parity)**: Complete high bit depth video pipeline (`yuv420p10le`, `p010le`, `RGB48LE`) preserving BT.2020 color primaries and SMPTE 2084 PQ High Dynamic Range metadata without color clipping or banding.
+* **Next-Gen AV1 & ProRes Mastering**: Hardware AV1 encoding on AMD AMF (`av1_amf`) and NVIDIA NVENC (`av1_nvenc`), SVT-AV1 CPU encoding, and Apple ProRes 422 HQ 10-bit master output.
+* **Interactive Viewport Canvas Zoom & Pan (Topaz Parity)**: Cursor-centered mouse-wheel zoom ($50\% - 800\%$), click-and-drag pan, quick zoom presets (`Fit`, `100%`, `200%`, `400%`), and a mini-map crop navigator in the before/after comparison curtain.
 * **Multi-File Batch Queue Manager**: Queue entire directories of videos, configure per-job overrides, start/pause processing, monitor live per-job FPS and ETA counters, and clear completed jobs.
 * **In-App Model Zoo Downloader**: Automatic atomic downloading of production ONNX weights directly from HuggingFace with live byte/percentage progress tracking.
 * **Studio Workflow Presets**: One-click professional profiles tailored for Web/Social, Cinematic 4K Master, Anime/Animation, and Archival Restoration.
-* **Interactive Split Comparison Player**: Drag-and-drop comparison viewport with instant Base64 preview extraction at any timestamp before launching full renders.
 
 ---
 
@@ -30,10 +32,10 @@ Video Upscaler Studio achieves native silicon acceleration without vendor lock-i
 
 | Platform | Target Hardware | Neural Inference Provider | Hardware Video Codecs |
 | :--- | :--- | :--- | :--- |
-| **Windows** | **AMD Radeon GPUs** (Radeon 890M, 7900 XTX) | **DirectML** (DirectX 12 Compute) | AMD AMF (`hevc_amf`, `h264_amf`) |
-| **Windows** | **NVIDIA GPUs** (RTX 4060, 4090, 3080) | **DirectML** / **CUDA** (FP16 Tensor Cores) | NVIDIA NVENC (`hevc_nvenc`, `h264_nvenc`) |
-| **macOS** | **Apple Silicon** (M1/M2/M3/M4 Max/Pro/Base) | **Apple CoreML** (Neural Engine + Metal) | VideoToolbox (`hevc_videotoolbox`, ProRes) |
-| **Cross-Platform** | Multi-Core CPU (x86_64 & ARM64) | ONNX Runtime CPU (Multi-threaded AVX/NEON) | Software CPU (`libx265`, `libx264`, `prores_ks`) |
+| **Windows** | **AMD Radeon GPUs** (Radeon 890M, 7900 XTX) | **DirectML** (DirectX 12 Compute) | AMD AMF (`hevc_amf`, `av1_amf`, `h264_amf`) |
+| **Windows** | **NVIDIA GPUs** (RTX 4060, 4090, 3080) | **DirectML** / **CUDA** (FP16 Tensor Cores) | NVIDIA NVENC (`hevc_nvenc`, `av1_nvenc`, `h264_nvenc`) |
+| **macOS** | **Apple Silicon** (M1/M2/M3/M4 Max/Pro/Base) | **Apple CoreML** (Neural Engine + Metal) | VideoToolbox (`hevc_videotoolbox`, ProRes 422 HQ) |
+| **Cross-Platform** | Multi-Core CPU (x86_64 & ARM64) | ONNX Runtime CPU (Multi-threaded AVX/NEON) | Software CPU (`libsvtav1`, `libx265`, `libx264`, `prores_ks`) |
 
 ---
 

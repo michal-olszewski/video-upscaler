@@ -11,6 +11,10 @@ interface VideoStreamInfo {
   total_frames?: number;
   duration_seconds: number;
   codec_name: string;
+  pixel_format?: string;
+  color_space?: string;
+  color_primaries?: string;
+  color_transfer?: string;
 }
 
 interface MediaMetadata {
@@ -70,6 +74,7 @@ export const App: React.FC = () => {
     filmGrain: 0.12,
     temporalMode: 'Fast3Frame',
     encoder: 'hevc_amf',
+    colorFormat: 'sdr_8bit',
     crf: 18,
   });
 
@@ -144,6 +149,12 @@ export const App: React.FC = () => {
       }
       const data: MediaMetadata = await res.json();
       setMetadata(data);
+      // Auto-detect HDR10 or 10-bit source video
+      if (data.video_stream.color_transfer === 'smpte2084' || data.video_stream.color_primaries === 'bt2020') {
+        setSettings((prev) => ({ ...prev, colorFormat: 'hdr10_10bit' }));
+      } else if (data.video_stream.pixel_format?.includes('10')) {
+        setSettings((prev) => ({ ...prev, colorFormat: 'sdr_10bit' }));
+      }
       // Auto-set output path
       const stem = path.replace(/\.[^/.]+$/, '');
       setOutputPath(`${stem}_upscaled.mp4`);
@@ -246,23 +257,75 @@ export const App: React.FC = () => {
   };
 
   const getEncoderEnum = (encoderStr: string) => {
-    if (encoderStr === 'hevc_nvenc') {
-      return { NvidiaNvenc: 'H265Hevc' };
-    } else if (encoderStr === 'hevc_videotoolbox') {
-      return { AppleVideoToolbox: 'H265Hevc' };
-    } else if (encoderStr === 'libx265') {
-      return { SoftwareCpu: 'H265Hevc' };
-    } else if (encoderStr === 'prores_ks') {
-      return { SoftwareCpu: 'ProRes' };
+    switch (encoderStr) {
+      case 'hevc_nvenc':
+        return { NvidiaNvenc: 'H265Hevc' };
+      case 'av1_nvenc':
+        return { NvidiaNvenc: 'Av1' };
+      case 'hevc_amf':
+        return { AmdAmf: 'H265Hevc' };
+      case 'av1_amf':
+        return { AmdAmf: 'Av1' };
+      case 'hevc_videotoolbox':
+        return { AppleVideoToolbox: 'H265Hevc' };
+      case 'libx265':
+        return { SoftwareCpu: 'H265Hevc' };
+      case 'av1_svt':
+        return { SoftwareCpu: 'Av1' };
+      case 'prores_ks':
+        return { SoftwareCpu: 'ProRes' };
+      default:
+        return { AmdAmf: 'H265Hevc' };
     }
-    return { AmdAmf: 'H265Hevc' };
+  };
+
+  const buildEncodingProfile = () => {
+    const encoderEnum = getEncoderEnum(settings.encoder);
+    let pixel_format = 'yuv420p';
+    let high_bit_depth = false;
+    let color_primaries: string | null = null;
+    let color_transfer: string | null = null;
+    let color_space: string | null = null;
+
+    if (settings.colorFormat === 'hdr10_10bit') {
+      pixel_format = 'yuv420p10le';
+      high_bit_depth = true;
+      color_primaries = 'bt2020';
+      color_transfer = 'smpte2084';
+      color_space = 'bt2020nc';
+    } else if (settings.colorFormat === 'sdr_10bit') {
+      pixel_format = 'yuv420p10le';
+      high_bit_depth = true;
+      color_primaries = 'bt709';
+      color_transfer = 'bt709';
+      color_space = 'bt709';
+    } else if (settings.colorFormat === 'prores_hq') {
+      pixel_format = 'yuv422p10le';
+      high_bit_depth = true;
+      color_primaries = 'bt709';
+      color_transfer = 'bt709';
+      color_space = 'bt709';
+    }
+
+    return {
+      encoder: encoderEnum,
+      crf: settings.crf,
+      bitrate_kbps: null,
+      preset: 'medium',
+      pixel_format,
+      copy_audio: true,
+      copy_subtitles: true,
+      color_primaries,
+      color_transfer,
+      color_space,
+      high_bit_depth,
+    };
   };
 
   const handleStartRender = async () => {
     setIsProcessing(true);
     setProgress(null);
 
-    const encoderEnum = getEncoderEnum(settings.encoder);
     const payload = {
       id: `job-${Date.now()}`,
       input_path: inputPath,
@@ -273,15 +336,7 @@ export const App: React.FC = () => {
       tile_padding: null,
       film_grain: settings.filmGrain,
       temporal_mode: settings.temporalMode,
-      encoding_profile: {
-        encoder: encoderEnum,
-        crf: settings.crf,
-        bitrate_kbps: null,
-        preset: 'medium',
-        pixel_format: 'yuv420p',
-        copy_audio: true,
-        copy_subtitles: true,
-      },
+      encoding_profile: buildEncodingProfile(),
     };
 
     try {
@@ -314,7 +369,6 @@ export const App: React.FC = () => {
   // Batch queue handlers
   const handleQueueCurrentJob = async () => {
     if (!inputPath || !outputPath) return;
-    const encoderEnum = getEncoderEnum(settings.encoder);
     const payload = {
       id: `job-${Date.now()}`,
       input_path: inputPath,
@@ -325,15 +379,7 @@ export const App: React.FC = () => {
       tile_padding: null,
       film_grain: settings.filmGrain,
       temporal_mode: settings.temporalMode,
-      encoding_profile: {
-        encoder: encoderEnum,
-        crf: settings.crf,
-        bitrate_kbps: null,
-        preset: 'medium',
-        pixel_format: 'yuv420p',
-        copy_audio: true,
-        copy_subtitles: true,
-      },
+      encoding_profile: buildEncodingProfile(),
     };
 
     try {
@@ -358,7 +404,7 @@ export const App: React.FC = () => {
       const data = await res.json();
       if (!data.paths || data.paths.length === 0) return;
 
-      const encoderEnum = getEncoderEnum(settings.encoder);
+      const profile = buildEncodingProfile();
 
       for (const path of data.paths) {
         const stem = path.replace(/\.[^/.]+$/, '');
@@ -373,15 +419,7 @@ export const App: React.FC = () => {
           tile_padding: null,
           film_grain: settings.filmGrain,
           temporal_mode: settings.temporalMode,
-          encoding_profile: {
-            encoder: encoderEnum,
-            crf: settings.crf,
-            bitrate_kbps: null,
-            preset: 'medium',
-            pixel_format: 'yuv420p',
-            copy_audio: true,
-            copy_subtitles: true,
-          },
+          encoding_profile: profile,
         };
         await fetch('/api/queue/add', {
           method: 'POST',
@@ -548,6 +586,25 @@ export const App: React.FC = () => {
                     </span>
                     <span className="meta-chip">
                       <strong>{metadata.video_stream.codec_name.toUpperCase()}</strong>
+                    </span>
+                    <span
+                      className="meta-chip"
+                      style={{
+                        backgroundColor: (metadata.video_stream.color_transfer === 'smpte2084' || metadata.video_stream.color_primaries === 'bt2020')
+                          ? 'rgba(234, 179, 8, 0.2)'
+                          : 'rgba(59, 130, 246, 0.15)',
+                        borderColor: (metadata.video_stream.color_transfer === 'smpte2084' || metadata.video_stream.color_primaries === 'bt2020')
+                          ? '#eab308'
+                          : '#3b82f6',
+                        color: (metadata.video_stream.color_transfer === 'smpte2084' || metadata.video_stream.color_primaries === 'bt2020')
+                          ? '#facc15'
+                          : '#60a5fa',
+                      }}
+                    >
+                      <strong>
+                        {metadata.video_stream.pixel_format?.includes('10') ? '10-BIT' : '8-BIT'}{' '}
+                        {metadata.video_stream.color_transfer === 'smpte2084' ? 'HDR10' : 'SDR'}
+                      </strong>
                     </span>
                   </div>
                 )}

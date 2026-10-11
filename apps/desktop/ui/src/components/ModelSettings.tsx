@@ -23,6 +23,7 @@ export interface UpscaleSettings {
   temporalMode: 'Disabled' | 'Fast3Frame' | 'Quality5Frame';
   encoder: string;
   crf: number;
+  colorFormat: 'sdr_8bit' | 'hdr10_10bit' | 'sdr_10bit' | 'prores_hq';
 }
 
 interface ModelSettingsProps {
@@ -115,7 +116,8 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
           tileSize: 768,
           filmGrain: 0.08,
           temporalMode: 'Fast3Frame',
-          encoder: 'hevc_amf',
+          encoder: 'av1_amf',
+          colorFormat: 'sdr_8bit',
           crf: 20,
         });
         break;
@@ -128,6 +130,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
           filmGrain: 0.15,
           temporalMode: 'Quality5Frame',
           encoder: 'hevc_nvenc',
+          colorFormat: 'hdr10_10bit',
           crf: 16,
         });
         break;
@@ -140,6 +143,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
           filmGrain: 0.02,
           temporalMode: 'Fast3Frame',
           encoder: 'hevc_nvenc',
+          colorFormat: 'sdr_8bit',
           crf: 18,
         });
         break;
@@ -152,6 +156,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
           filmGrain: 0.20,
           temporalMode: 'Quality5Frame',
           encoder: 'prores_ks',
+          colorFormat: 'prores_hq',
           crf: 16,
         });
         break;
@@ -305,7 +310,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
         </div>
       </div>
 
-      <div className="section-title" style={{ marginTop: '20px' }}>Export Encoding</div>
+      <div className="section-title" style={{ marginTop: '20px' }}>Export Encoding & Color</div>
 
       <div className="form-group">
         <label className="form-label">Hardware Encoder</label>
@@ -315,11 +320,34 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
           onChange={(e) => update('encoder', e.target.value)}
         >
           <option value="hevc_amf">AMD AMF H.265 / HEVC (Radeon 890M Hardware)</option>
+          <option value="av1_amf">AMD AMF AV1 Next-Gen (Radeon 890M Hardware)</option>
           <option value="hevc_nvenc">NVIDIA NVENC H.265 / HEVC (RTX 4060 Hardware)</option>
+          <option value="av1_nvenc">NVIDIA NVENC AV1 Next-Gen (RTX 4060 Hardware)</option>
           <option value="hevc_videotoolbox">Apple VideoToolbox H.265 (Metal Hardware)</option>
+          <option value="av1_svt">SVT-AV1 Open Source (High-Efficiency CPU)</option>
           <option value="libx265">Software CPU (x265 High Efficiency)</option>
-          <option value="prores_ks">Apple ProRes 422 HQ (Master Quality)</option>
+          <option value="prores_ks">Apple ProRes 422 HQ (10-Bit Master Quality)</option>
         </select>
+      </div>
+
+      <div className="form-group">
+        <label className="form-label">Color Space & Bit Depth</label>
+        <select
+          className="select-input"
+          value={settings.colorFormat}
+          onChange={(e) => update('colorFormat', e.target.value as any)}
+        >
+          <option value="sdr_8bit">8-bit Standard SDR (Rec.709 — Universal Compatibility)</option>
+          <option value="hdr10_10bit">10-bit High Dynamic Range (HDR10 / Rec.2020 PQ)</option>
+          <option value="sdr_10bit">10-bit Deep Color SDR (Rec.709 — Zero Banding Gradients)</option>
+          <option value="prores_hq">10-bit ProRes 422 HQ (DaVinci Resolve Master Intermediate)</option>
+        </select>
+        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.4 }}>
+          {settings.colorFormat === 'sdr_8bit' && 'Standard 8-bit YUV420p SDR for web and universal playback.'}
+          {settings.colorFormat === 'hdr10_10bit' && 'Preserves HDR10 PQ transfer and Wide Color Gamut BT.2020 without color clipping.'}
+          {settings.colorFormat === 'sdr_10bit' && '10-bit YUV420p10le precision eliminates sky/shadow banding in SDR video.'}
+          {settings.colorFormat === 'prores_hq' && 'Uncompressed 10-bit 4:2:2 mastering format matching DaVinci Resolve Studio.'}
+        </div>
       </div>
 
       <div className="form-group">

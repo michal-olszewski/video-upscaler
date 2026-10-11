@@ -71,6 +71,53 @@ impl ColorPipeline {
 
         bytes
     }
+
+    /// Normalizes 16-bit little-endian RGB byte buffer (RGB48LE, 6 bytes/pixel)
+    /// into planar NCHW float tensor [0.0..1.0] for 10-bit/12-bit/16-bit HDR pipelines
+    pub fn rgb48_bytes_to_nchw(
+        rgb48_data: &[u8],
+        width: usize,
+        height: usize,
+    ) -> Array4<f32> {
+        let mut tensor = Array4::<f32>::zeros((1, 3, height, width));
+
+        for y in 0..height {
+            for x in 0..width {
+                let idx = (y * width + x) * 6;
+                let r = u16::from_le_bytes([rgb48_data[idx], rgb48_data[idx + 1]]) as f32 / 65535.0;
+                let g = u16::from_le_bytes([rgb48_data[idx + 2], rgb48_data[idx + 3]]) as f32 / 65535.0;
+                let b = u16::from_le_bytes([rgb48_data[idx + 4], rgb48_data[idx + 5]]) as f32 / 65535.0;
+
+                tensor[[0, 0, y, x]] = r;
+                tensor[[0, 1, y, x]] = g;
+                tensor[[0, 2, y, x]] = b;
+            }
+        }
+
+        tensor
+    }
+
+    /// Converts planar NCHW float tensor [0.0..1.0] back to 16-bit little-endian
+    /// RGB byte buffer (RGB48LE, 6 bytes/pixel) preserving full 10-bit/12-bit color precision
+    pub fn nchw_to_rgb48_bytes(tensor: &Array4<f32>) -> Vec<u8> {
+        let (_, _, height, width) = tensor.dim();
+        let mut bytes = vec![0u8; width * height * 6];
+
+        for y in 0..height {
+            for x in 0..width {
+                let idx = (y * width + x) * 6;
+                let r = (tensor[[0, 0, y, x]] * 65535.0).clamp(0.0, 65535.0).round() as u16;
+                let g = (tensor[[0, 1, y, x]] * 65535.0).clamp(0.0, 65535.0).round() as u16;
+                let b = (tensor[[0, 2, y, x]] * 65535.0).clamp(0.0, 65535.0).round() as u16;
+
+                bytes[idx..idx + 2].copy_from_slice(&r.to_le_bytes());
+                bytes[idx + 2..idx + 4].copy_from_slice(&g.to_le_bytes());
+                bytes[idx + 4..idx + 6].copy_from_slice(&b.to_le_bytes());
+            }
+        }
+
+        bytes
+    }
 }
 
 #[cfg(test)]
@@ -90,6 +137,24 @@ mod tests {
         assert_eq!(tensor.dim(), (1, 3, height, width));
 
         let reconstructed_bytes = ColorPipeline::nchw_to_rgb_bytes(&tensor);
+        assert_eq!(original_bytes, reconstructed_bytes);
+    }
+
+    #[test]
+    fn test_rgb48_nchw_roundtrip() {
+        let width = 8;
+        let height = 8;
+        let mut original_bytes = vec![0u8; width * height * 6];
+        // Populate with 16-bit test patterns
+        for i in 0..(width * height * 3) {
+            let val = ((i * 1023) % 65536) as u16;
+            original_bytes[i * 2..i * 2 + 2].copy_from_slice(&val.to_le_bytes());
+        }
+
+        let tensor = ColorPipeline::rgb48_bytes_to_nchw(&original_bytes, width, height);
+        assert_eq!(tensor.dim(), (1, 3, height, width));
+
+        let reconstructed_bytes = ColorPipeline::nchw_to_rgb48_bytes(&tensor);
         assert_eq!(original_bytes, reconstructed_bytes);
     }
 
