@@ -24,6 +24,7 @@ export interface UpscaleSettings {
   encoder: string;
   crf: number;
   colorFormat: 'sdr_8bit' | 'hdr10_10bit' | 'sdr_10bit' | 'prores_hq';
+  interpolationMode: 'Disabled' | 'DoubleFps' | 'QuadrupleFps' | 'SlowMotion2x' | 'SlowMotion4x';
 }
 
 interface ModelSettingsProps {
@@ -118,6 +119,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
           temporalMode: 'Fast3Frame',
           encoder: 'av1_amf',
           colorFormat: 'sdr_8bit',
+          interpolationMode: 'Disabled',
           crf: 20,
         });
         break;
@@ -131,6 +133,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
           temporalMode: 'Quality5Frame',
           encoder: 'hevc_nvenc',
           colorFormat: 'hdr10_10bit',
+          interpolationMode: 'DoubleFps',
           crf: 16,
         });
         break;
@@ -144,6 +147,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
           temporalMode: 'Fast3Frame',
           encoder: 'hevc_nvenc',
           colorFormat: 'sdr_8bit',
+          interpolationMode: 'Disabled',
           crf: 18,
         });
         break;
@@ -157,6 +161,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
           temporalMode: 'Quality5Frame',
           encoder: 'prores_ks',
           colorFormat: 'prores_hq',
+          interpolationMode: 'DoubleFps',
           crf: 16,
         });
         break;
@@ -274,6 +279,28 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
           {settings.temporalMode === 'Disabled' && 'Processes frames independently without temporal context.'}
           {settings.temporalMode === 'Fast3Frame' && 'Bilateral 3-frame sliding window eliminates high-frequency texture flicker.'}
           {settings.temporalMode === 'Quality5Frame' && 'Full 5-frame recurrent temporal fusion for maximum film-grade stability.'}
+        </div>
+      </div>
+
+      <div className="form-group">
+        <label className="form-label">Motion Interpolation & Slow-Motion (RIFE / Chronos)</label>
+        <select
+          className="select-input"
+          value={settings.interpolationMode}
+          onChange={(e) => update('interpolationMode', e.target.value as any)}
+        >
+          <option value="Disabled">Native Frame Rate (No Retiming)</option>
+          <option value="DoubleFps">2× Motion Interpolation (Smooth 60fps / HFR)</option>
+          <option value="QuadrupleFps">4× Motion Interpolation (Ultra 120fps HFR)</option>
+          <option value="SlowMotion2x">2× Filmic Slow-Motion (50% Half-Speed Playback)</option>
+          <option value="SlowMotion4x">4× Filmic Slow-Motion (25% Quarter-Speed Playback)</option>
+        </select>
+        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.4 }}>
+          {settings.interpolationMode === 'Disabled' && 'Preserves native video framerate without synthesizing new intermediate frames.'}
+          {settings.interpolationMode === 'DoubleFps' && 'Bi-directional optical flow motion synthesis doubles framerate for buttery-smooth 60fps playback.'}
+          {settings.interpolationMode === 'QuadrupleFps' && 'Hierarchical 4x optical flow interpolation targets high-refresh 120fps displays.'}
+          {settings.interpolationMode === 'SlowMotion2x' && 'Synthesizes 2x intermediate frames while keeping native playback rate for smooth half-speed slow motion.'}
+          {settings.interpolationMode === 'SlowMotion4x' && 'Synthesizes 4x intermediate frames for ultra-smooth 25% quarter-speed action playback.'}
         </div>
       </div>
 

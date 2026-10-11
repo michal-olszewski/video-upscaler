@@ -17,6 +17,7 @@ Powered by a decoupled **Rust engine core**, native hardware **DirectML (DirectX
 * **Dual-Mode Temporal Flicker Suppression**: Eliminates high-frequency inter-frame texture shimmering using edge-aware bilateral temporal fusion ($T=3$ Fast vs. $T=5$ Quality) with strict 1:1 frame count invariance.
 * **Bounded VRAM Ring-Buffer Architecture**: Zero-copy 3-stage pipeline isolating Decode (Producer), Neural Inference (Worker), and Hardware Encode (Consumer) via `tokio::sync::mpsc::channel(8)` backpressure. Safely upscale 4K/8K footage on GPUs with 4–8 GB VRAM.
 * **2D Hann-Window Apodization & Tiling**: Overlapped sub-tile spatial partitioning with smooth raised-cosine weight blending completely eliminates tile seams and grid artifacts.
+* **AI Motion Frame Interpolation & Slow-Motion (Topaz Chronos & DaVinci Speed Warp Parity)**: High-precision bidirectional optical-flow motion compensation and frame synthesis supporting $2\times$ FPS doubling (e.g. 24 → 48 fps, 30 → 60 fps), $4\times$ high-framerate conversion (e.g. 30 → 120 fps), and $2\times$/$4\times$ filmic slow-motion retiming while preserving perfect audio synchronization.
 * **10-Bit Color & HDR10 Passthrough (DaVinci Resolve Parity)**: Complete high bit depth video pipeline (`yuv420p10le`, `p010le`, `RGB48LE`) preserving BT.2020 color primaries and SMPTE 2084 PQ High Dynamic Range metadata without color clipping or banding.
 * **Next-Gen AV1 & ProRes Mastering**: Hardware AV1 encoding on AMD AMF (`av1_amf`) and NVIDIA NVENC (`av1_nvenc`), SVT-AV1 CPU encoding, and Apple ProRes 422 HQ 10-bit master output.
 * **Interactive Viewport Canvas Zoom & Pan (Topaz Parity)**: Cursor-centered mouse-wheel zoom ($50\% - 800\%$), click-and-drag pan, quick zoom presets (`Fit`, `100%`, `200%`, `400%`), and a mini-map crop navigator in the before/after comparison curtain.
@@ -93,6 +94,7 @@ video-upscaler/
 │   └── engine-core/                          # Pipeline orchestration
 │       ├── src/pipeline.rs                   # 3-stage ring buffer pipeline with backpressure
 │       ├── src/temporal.rs                   # Recurrent temporal sliding window & bilateral fusion
+│       ├── src/interpolation.rs              # Bidirectional optical flow motion interpolation & slow-motion
 │       ├── src/preview.rs                    # Sub-second frame preview generator
 │       └── src/queue.rs                      # Multi-job batch queue scheduler
 └── apps/
@@ -124,7 +126,7 @@ npm run build
 cd ../../..
 ```
 
-### 2. Run Workspace Test Suite (19 Tests)
+### 2. Run Workspace Test Suite (21 Tests)
 ```bash
 cargo test --workspace
 ```

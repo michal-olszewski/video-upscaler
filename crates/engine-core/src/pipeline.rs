@@ -1,3 +1,4 @@
+use crate::interpolation::{InterpolationMode, MotionInterpolationEngine};
 use crate::job::{JobProgress, JobState, UpscaleJobRequest};
 use crate::temporal::{TemporalFusionEngine, TemporalMode, TemporalSlidingWindow};
 use anyhow::{Context, Result};
@@ -54,9 +55,13 @@ impl UpscalePipeline {
         let fps = metadata.video_stream.frame_rate;
         let total_frames = metadata.video_stream.total_frames.unwrap_or(1).max(1);
 
+        let interpolation_mode = request.interpolation_mode.unwrap_or(InterpolationMode::Disabled);
+        let out_fps = interpolation_mode.calculate_output_fps(fps);
+        let expected_total_frames = interpolation_mode.calculate_total_frames(total_frames);
+
         info!(
-            "Job {}: Streaming {}x{} -> {}x{} @ {:.2} fps ({} total frames) using {}",
-            request.id, in_w, in_h, out_w, out_h, fps, total_frames, model_desc.name
+            "Job {}: Streaming {}x{} -> {}x{} @ {:.2} fps ({} source frames -> {} frames @ {:.2} fps) using {} with interpolation {:?}",
+            request.id, in_w, in_h, out_w, out_h, fps, total_frames, expected_total_frames, out_fps, model_desc.name, interpolation_mode
         );
 
         let tile_size = request.tile_size.unwrap_or(model_desc.default_tile_size);
@@ -136,6 +141,8 @@ impl UpscalePipeline {
         let infer_task = tokio::spawn(async move {
             let mut sliding_window = TemporalSlidingWindow::new(temporal_mode);
             let mut recent_upscaled: std::collections::VecDeque<Array4<f32>> = std::collections::VecDeque::new();
+            let mut previous_upscaled: Option<Array4<f32>> = None;
+            let mut out_frame_idx = 0u64;
 
             let upscale_frame = |raw_bytes: &[u8]| -> Result<Array4<f32>> {
                 let in_tensor = if high_bit_depth {
@@ -198,9 +205,32 @@ impl UpscalePipeline {
                         ColorPipeline::apply_film_grain(&mut upscaled, film_grain);
                     }
 
-                    let out_bytes = convert_out(&upscaled);
-                    if infer_tx.send((window.target_index, out_bytes)).await.is_err() {
-                        return Ok(());
+                    if interpolation_mode != InterpolationMode::Disabled {
+                        if let Some(ref prev) = previous_upscaled {
+                            let intermediates = MotionInterpolationEngine::interpolate_intermediate(
+                                prev,
+                                &upscaled,
+                                interpolation_mode,
+                            );
+                            for intermediate in intermediates {
+                                let out_bytes = convert_out(&intermediate);
+                                if infer_tx.send((out_frame_idx, out_bytes)).await.is_err() {
+                                    return Ok(());
+                                }
+                                out_frame_idx += 1;
+                            }
+                        }
+                        let out_bytes = convert_out(&upscaled);
+                        if infer_tx.send((out_frame_idx, out_bytes)).await.is_err() {
+                            return Ok(());
+                        }
+                        out_frame_idx += 1;
+                        previous_upscaled = Some(upscaled);
+                    } else {
+                        let out_bytes = convert_out(&upscaled);
+                        if infer_tx.send((window.target_index, out_bytes)).await.is_err() {
+                            return Ok(());
+                        }
                     }
                 }
             }
@@ -225,9 +255,32 @@ impl UpscalePipeline {
                     ColorPipeline::apply_film_grain(&mut upscaled, film_grain);
                 }
 
-                let out_bytes = convert_out(&upscaled);
-                if infer_tx.send((window.target_index, out_bytes)).await.is_err() {
-                    return Ok(());
+                if interpolation_mode != InterpolationMode::Disabled {
+                    if let Some(ref prev) = previous_upscaled {
+                        let intermediates = MotionInterpolationEngine::interpolate_intermediate(
+                            prev,
+                            &upscaled,
+                            interpolation_mode,
+                        );
+                        for intermediate in intermediates {
+                            let out_bytes = convert_out(&intermediate);
+                            if infer_tx.send((out_frame_idx, out_bytes)).await.is_err() {
+                                return Ok(());
+                            }
+                            out_frame_idx += 1;
+                        }
+                    }
+                    let out_bytes = convert_out(&upscaled);
+                    if infer_tx.send((out_frame_idx, out_bytes)).await.is_err() {
+                        return Ok(());
+                    }
+                    out_frame_idx += 1;
+                    previous_upscaled = Some(upscaled);
+                } else {
+                    let out_bytes = convert_out(&upscaled);
+                    if infer_tx.send((window.target_index, out_bytes)).await.is_err() {
+                        return Ok(());
+                    }
                 }
             }
 
@@ -244,7 +297,7 @@ impl UpscalePipeline {
         let job_id = request.id.clone();
         let cancelled_mux = Arc::clone(&self.cancelled);
 
-        let mut progress = JobProgress::new(job_id.clone(), total_frames);
+        let mut progress = JobProgress::new(job_id.clone(), expected_total_frames);
         progress.state = JobState::Processing;
         let _ = progress_tx.send(progress.clone()).await;
 
@@ -252,7 +305,7 @@ impl UpscalePipeline {
             &output_path,
             out_w,
             out_h,
-            fps,
+            out_fps,
             &encoding_profile,
             Some(&audio_src),
         )?;
@@ -277,7 +330,7 @@ impl UpscalePipeline {
             } else {
                 0.0
             };
-            let remaining = total_frames.saturating_sub(processed_frames);
+            let remaining = expected_total_frames.saturating_sub(processed_frames);
             let eta = if current_fps > 0.0 {
                 (remaining as f64 / current_fps) as u64
             } else {
@@ -285,7 +338,7 @@ impl UpscalePipeline {
             };
 
             progress.current_frame = processed_frames;
-            progress.percentage = ((processed_frames as f32 / total_frames as f32) * 100.0).min(100.0);
+            progress.percentage = ((processed_frames as f32 / expected_total_frames as f32) * 100.0).min(100.0);
             progress.current_fps = current_fps;
             progress.eta_seconds = eta;
 

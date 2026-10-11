@@ -13,6 +13,7 @@ pub enum JobState {
     Cancelled,
 }
 
+use crate::interpolation::InterpolationMode;
 use crate::temporal::TemporalMode;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,6 +28,8 @@ pub struct UpscaleJobRequest {
     pub film_grain: f32,
     #[serde(default)]
     pub temporal_mode: Option<TemporalMode>,
+    #[serde(default)]
+    pub interpolation_mode: Option<InterpolationMode>,
     pub encoding_profile: OutputEncodingProfile,
 }
 

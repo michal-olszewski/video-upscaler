@@ -173,6 +173,7 @@ mod tests {
             tile_padding: None,
             film_grain: 0.1,
             temporal_mode: None,
+            interpolation_mode: None,
             encoding_profile: OutputEncodingProfile::default(),
         }
     }

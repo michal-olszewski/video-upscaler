@@ -97,6 +97,23 @@ impl ModelRegistry {
                         .to_string(),
                 ),
             },
+            ModelDescriptor {
+                id: "rife-v4.6".to_string(),
+                name: "RIFE v4.6 (AI Motion Frame Interpolation)".to_string(),
+                description: "Deep optical flow motion synthesis. Generates silky-smooth 60fps/120fps video or filmic slow-motion without stuttering."
+                    .to_string(),
+                category: ModelCategory::FrameInterpolation,
+                scale_factor: 1,
+                temporal_window_frames: 2,
+                default_tile_size: 512,
+                default_padding: 0,
+                supports_fp16: true,
+                filename: "rife-v4.6.onnx".to_string(),
+                download_url: Some(
+                    "https://huggingface.co/notaneimu/onnx-image-models/resolve/main/rife46.onnx"
+                        .to_string(),
+                ),
+            },
         ]
     }
 

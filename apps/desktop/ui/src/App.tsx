@@ -75,6 +75,7 @@ export const App: React.FC = () => {
     temporalMode: 'Fast3Frame',
     encoder: 'hevc_amf',
     colorFormat: 'sdr_8bit',
+    interpolationMode: 'Disabled',
     crf: 18,
   });
 
@@ -336,6 +337,7 @@ export const App: React.FC = () => {
       tile_padding: null,
       film_grain: settings.filmGrain,
       temporal_mode: settings.temporalMode,
+      interpolation_mode: settings.interpolationMode,
       encoding_profile: buildEncodingProfile(),
     };
 
@@ -379,6 +381,7 @@ export const App: React.FC = () => {
       tile_padding: null,
       film_grain: settings.filmGrain,
       temporal_mode: settings.temporalMode,
+      interpolation_mode: settings.interpolationMode,
       encoding_profile: buildEncodingProfile(),
     };
 
@@ -419,6 +422,7 @@ export const App: React.FC = () => {
           tile_padding: null,
           film_grain: settings.filmGrain,
           temporal_mode: settings.temporalMode,
+          interpolation_mode: settings.interpolationMode,
           encoding_profile: profile,
         };
         await fetch('/api/queue/add', {
@@ -580,6 +584,17 @@ export const App: React.FC = () => {
                     </span>
                     <span className="meta-chip">
                       <strong>{metadata.video_stream.frame_rate.toFixed(1)} fps</strong>
+                      {settings.interpolationMode !== 'Disabled' && (
+                        <span style={{ color: '#a78bfa', marginLeft: '5px' }}>
+                          → {settings.interpolationMode === 'DoubleFps'
+                            ? `${(metadata.video_stream.frame_rate * 2).toFixed(1)} fps (2× Motion)`
+                            : settings.interpolationMode === 'QuadrupleFps'
+                            ? `${(metadata.video_stream.frame_rate * 4).toFixed(1)} fps (4× Motion)`
+                            : settings.interpolationMode === 'SlowMotion2x'
+                            ? `(2× Slow-Mo)`
+                            : `(4× Slow-Mo)`}
+                        </span>
+                      )}
                     </span>
                     <span className="meta-chip">
                       <strong>{metadata.duration_seconds.toFixed(1)}s</strong>
