@@ -13,6 +13,8 @@ pub enum JobState {
     Cancelled,
 }
 
+use crate::temporal::TemporalMode;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpscaleJobRequest {
     pub id: String,
@@ -23,8 +25,11 @@ pub struct UpscaleJobRequest {
     pub tile_size: Option<usize>,
     pub tile_padding: Option<usize>,
     pub film_grain: f32,
+    #[serde(default)]
+    pub temporal_mode: Option<TemporalMode>,
     pub encoding_profile: OutputEncodingProfile,
 }
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JobProgress {

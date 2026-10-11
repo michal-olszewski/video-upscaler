@@ -5,10 +5,12 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use engine_core::temporal::TemporalMode;
 use engine_core::{JobProgress, JobState, PreviewEngine, UpscaleJobRequest, UpscalePipeline};
 use inference_runtime::{ExecutionBackend, HardwareManager};
-use models::ModelRegistry;
+use models::{ModelDescriptor, ModelDownloadProgress, ModelDownloader, ModelRegistry};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 use tower_http::cors::{Any, CorsLayer};
@@ -20,6 +22,7 @@ use video_io::MediaProbe;
 struct AppState {
     active_pipeline: Arc<Mutex<Option<Arc<UpscalePipeline>>>>,
     latest_progress: Arc<Mutex<Option<JobProgress>>>,
+    model_downloads: Arc<Mutex<HashMap<String, ModelDownloadProgress>>>,
 }
 
 #[derive(Deserialize)]
@@ -34,12 +37,29 @@ struct PreviewRequest {
     model_id: String,
     device_id: Option<u32>,
     film_grain: Option<f32>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    temporal_mode: Option<TemporalMode>,
+}
+
+
+#[derive(Deserialize)]
+struct DownloadModelRequest {
+    model_id: String,
+}
+
+#[derive(Serialize)]
+struct ModelCatalogItem {
+    #[serde(flatten)]
+    descriptor: ModelDescriptor,
+    is_cached: bool,
 }
 
 #[derive(Serialize)]
 struct ErrorResponse {
     error: String,
 }
+
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -61,6 +81,7 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState {
         active_pipeline: Arc::new(Mutex::new(None)),
         latest_progress: Arc::new(Mutex::new(None)),
+        model_downloads: Arc::new(Mutex::new(HashMap::new())),
     };
 
     let cors = CorsLayer::new()
@@ -75,6 +96,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/health", get(health_check))
         .route("/api/devices", get(list_devices))
         .route("/api/models", get(list_models))
+        .route("/api/models/download", post(download_model))
+        .route("/api/models/downloads", get(get_downloads))
         .route("/api/probe", post(probe_media))
         .route("/api/preview", post(generate_preview))
         .route("/api/upscale", post(start_upscale))
@@ -101,8 +124,42 @@ async fn list_devices() -> impl IntoResponse {
 }
 
 async fn list_models() -> impl IntoResponse {
-    Json(ModelRegistry::list_models())
+    let list = ModelRegistry::list_models()
+        .into_iter()
+        .map(|m| {
+            let cached = ModelDownloader::is_cached(&m.id);
+            ModelCatalogItem {
+                descriptor: m,
+                is_cached: cached,
+            }
+        })
+        .collect::<Vec<_>>();
+    Json(list)
 }
+
+async fn download_model(
+    State(state): State<AppState>,
+    Json(payload): Json<DownloadModelRequest>,
+) -> impl IntoResponse {
+    let model_id = payload.model_id.clone();
+    let downloads = Arc::clone(&state.model_downloads);
+
+    tokio::task::spawn_blocking(move || {
+        let downloads_cb = Arc::clone(&downloads);
+        let _ = ModelDownloader::download_model(&model_id, move |prog| {
+            let mut map = downloads_cb.blocking_lock();
+            map.insert(prog.model_id.clone(), prog);
+        });
+    });
+
+    Json(serde_json::json!({ "status": "download_started", "model_id": payload.model_id }))
+}
+
+async fn get_downloads(State(state): State<AppState>) -> impl IntoResponse {
+    let map = state.model_downloads.lock().await;
+    Json(map.clone())
+}
+
 
 async fn probe_media(Json(payload): Json<ProbeRequest>) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
     match MediaProbe::probe_file(&payload.path) {

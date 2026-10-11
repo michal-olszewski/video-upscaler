@@ -62,9 +62,11 @@ export const App: React.FC = () => {
     scaleFactor: 2,
     tileSize: 768,
     filmGrain: 0.12,
+    temporalMode: 'Fast3Frame',
     encoder: 'hevc_amf',
     crf: 18,
   });
+
 
   // Load hardware devices and models on startup
   useEffect(() => {
@@ -202,7 +204,9 @@ export const App: React.FC = () => {
       tile_size: settings.tileSize > 0 ? settings.tileSize : null,
       tile_padding: null,
       film_grain: settings.filmGrain,
+      temporal_mode: settings.temporalMode,
       encoding_profile: {
+
         encoder: encoderEnum,
         crf: settings.crf,
         bitrate_kbps: null,

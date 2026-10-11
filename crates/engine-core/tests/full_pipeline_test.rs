@@ -48,8 +48,10 @@ async fn test_full_video_upscale_pipeline() {
         tile_size: Some(128),
         tile_padding: Some(16),
         film_grain: 0.12,
+        temporal_mode: Some(engine_core::temporal::TemporalMode::Fast3Frame),
         encoding_profile: OutputEncodingProfile::default(),
     };
+
 
     let (tx, mut rx) = mpsc::channel::<JobProgress>(64);
     let pipeline = UpscalePipeline::new();

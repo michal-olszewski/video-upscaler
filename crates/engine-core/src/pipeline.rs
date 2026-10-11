@@ -1,6 +1,8 @@
 use crate::job::{JobProgress, JobState, UpscaleJobRequest};
+use crate::temporal::{TemporalFusionEngine, TemporalMode, TemporalSlidingWindow};
 use anyhow::{Context, Result};
 use image_processing::{ColorPipeline, TileSpec, TilingEngine};
+
 use inference_runtime::InferenceSessionWrapper;
 use models::ModelRegistry;
 use ndarray::Array4;
@@ -97,23 +99,20 @@ impl UpscalePipeline {
         });
 
         // ----------------------------------------------------
-        // STAGE 2: Tiling, DirectML Inference & Reconstruction
+        // STAGE 2: Tiling, DirectML Inference & Reconstruction (with Temporal Flicker Suppression)
         // ----------------------------------------------------
         let cancelled_infer = Arc::clone(&self.cancelled);
         let session_clone = Arc::clone(&session);
         let tiling_clone = Arc::clone(&tiling_engine);
         let film_grain = request.film_grain;
+        let temporal_mode = request.temporal_mode.unwrap_or(TemporalMode::Disabled);
 
         let infer_task = tokio::spawn(async move {
-            while let Some((frame_idx, raw_frame)) = decode_rx.recv().await {
-                if cancelled_infer.load(Ordering::SeqCst) {
-                    break;
-                }
+            let mut sliding_window = TemporalSlidingWindow::new(temporal_mode);
+            let mut recent_upscaled: std::collections::VecDeque<Array4<f32>> = std::collections::VecDeque::new();
 
-                // 1. Normalization
-                let in_tensor = ColorPipeline::rgb_bytes_to_nchw(&raw_frame, in_w, in_h);
-
-                // 2. Tiling & Tensor Inference
+            let upscale_frame = |raw_bytes: &[u8]| -> Result<Array4<f32>> {
+                let in_tensor = ColorPipeline::rgb_bytes_to_nchw(raw_bytes, in_w, in_h);
                 let tile_coords = tiling_clone.compute_tiles(in_w, in_h);
                 let mut tile_outputs = Vec::with_capacity(tile_coords.len());
 
@@ -131,21 +130,72 @@ impl UpscalePipeline {
                     tile_outputs.push((coord, tile_out));
                 }
 
-                // 3. 2D Hann reconstruction
-                let mut upscaled = tiling_clone.stitch_tiles(&tile_outputs, out_w, out_h);
+                Ok(tiling_clone.stitch_tiles(&tile_outputs, out_w, out_h))
+            };
 
-                // 4. Procedural film grain
+            while let Some((frame_idx, raw_frame)) = decode_rx.recv().await {
+                if cancelled_infer.load(Ordering::SeqCst) {
+                    break;
+                }
+
+                let windows = sliding_window.push_frame(frame_idx, raw_frame);
+                for window in windows {
+                    let center_idx = window.frames.len() / 2;
+                    let target_raw = &window.frames[center_idx].1;
+                    let mut upscaled = upscale_frame(target_raw)?;
+
+                    if temporal_mode != TemporalMode::Disabled && !recent_upscaled.is_empty() {
+                        let neighbors: Vec<Array4<f32>> = recent_upscaled.iter().cloned().collect();
+                        TemporalFusionEngine::suppress_flicker_bilateral(&mut upscaled, &neighbors, 0.35);
+                    }
+
+                    if temporal_mode != TemporalMode::Disabled {
+                        recent_upscaled.push_back(upscaled.clone());
+                        if recent_upscaled.len() > temporal_mode.radius() {
+                            recent_upscaled.pop_front();
+                        }
+                    }
+
+                    if film_grain > 0.0 {
+                        ColorPipeline::apply_film_grain(&mut upscaled, film_grain);
+                    }
+
+                    let out_bytes = ColorPipeline::nchw_to_rgb_bytes(&upscaled);
+                    if infer_tx.send((window.target_index, out_bytes)).await.is_err() {
+                        return Ok(());
+                    }
+                }
+            }
+
+            // Flush remaining windows at EOF
+            let flushed = sliding_window.flush();
+            for window in flushed {
+                if cancelled_infer.load(Ordering::SeqCst) {
+                    break;
+                }
+
+                let center_idx = window.frames.len() / 2;
+                let target_raw = &window.frames[center_idx].1;
+                let mut upscaled = upscale_frame(target_raw)?;
+
+                if temporal_mode != TemporalMode::Disabled && !recent_upscaled.is_empty() {
+                    let neighbors: Vec<Array4<f32>> = recent_upscaled.iter().cloned().collect();
+                    TemporalFusionEngine::suppress_flicker_bilateral(&mut upscaled, &neighbors, 0.35);
+                }
+
                 if film_grain > 0.0 {
                     ColorPipeline::apply_film_grain(&mut upscaled, film_grain);
                 }
 
                 let out_bytes = ColorPipeline::nchw_to_rgb_bytes(&upscaled);
-                if infer_tx.send((frame_idx, out_bytes)).await.is_err() {
-                    break;
+                if infer_tx.send((window.target_index, out_bytes)).await.is_err() {
+                    return Ok(());
                 }
             }
+
             Ok::<(), anyhow::Error>(())
         });
+
 
         // ----------------------------------------------------
         // STAGE 3: Hardware Encode & Stream Muxer (Consumer)

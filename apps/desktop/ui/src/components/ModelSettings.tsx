@@ -19,9 +19,11 @@ export interface UpscaleSettings {
   scaleFactor: number;
   tileSize: number;
   filmGrain: number;
+  temporalMode: 'Disabled' | 'Fast3Frame' | 'Quality5Frame';
   encoder: string;
   crf: number;
 }
+
 
 interface ModelSettingsProps {
   models: ModelDescriptor[];
@@ -89,6 +91,25 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ models, settings, 
           <option value={4}>4x Super Resolution (e.g. 720p/1080p → 4K/8K)</option>
         </select>
       </div>
+
+      <div className="form-group">
+        <label className="form-label">Temporal Flicker Suppression</label>
+        <select
+          className="select-input"
+          value={settings.temporalMode}
+          onChange={(e) => update('temporalMode', e.target.value as any)}
+        >
+          <option value="Disabled">Disabled (Single Frame / Fast)</option>
+          <option value="Fast3Frame">Fast Temporal (3-Frame Window — Real-Time)</option>
+          <option value="Quality5Frame">Quality Temporal (5-Frame Window — Maximum Stability)</option>
+        </select>
+        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.4 }}>
+          {settings.temporalMode === 'Disabled' && 'Processes frames independently without temporal context.'}
+          {settings.temporalMode === 'Fast3Frame' && 'Bilateral 3-frame sliding window eliminates high-frequency texture flicker.'}
+          {settings.temporalMode === 'Quality5Frame' && 'Full 5-frame recurrent temporal fusion for maximum film-grade stability.'}
+        </div>
+      </div>
+
 
       <div className="form-group">
         <label className="form-label">VRAM Tile Dimension</label>
