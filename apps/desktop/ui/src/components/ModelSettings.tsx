@@ -27,6 +27,17 @@ export interface UpscaleSettings {
   interpolationMode: 'Disabled' | 'DoubleFps' | 'QuadrupleFps' | 'SlowMotion2x' | 'SlowMotion4x';
   deinterlaceMode: 'Disabled' | 'Auto' | 'BwdifSameRate' | 'BwdifBob' | 'Yadif';
   denoiseStrength: number;
+  // Phase 19: Pro Audio Suite & Loudness Normalization
+  audioCodec: 'Copy' | 'Aac' | 'Opus' | 'Flac' | 'PcmS16le' | 'PcmS24le' | 'Mute';
+  audioBitrateKbps: number;
+  loudnessNormalization: boolean;
+  targetLufs: number;
+  // Phase 20: Target Resolution & Crop / Aspect Ratio
+  targetResolution: 'NativeScale' | 'Preset720p' | 'Preset1080p' | 'Preset1440p' | 'Preset4KUHD' | 'Preset8KUHD' | 'SocialVertical9_16' | 'SocialSquare1_1' | 'CinemaWidescreen' | 'Custom';
+  customWidth?: number;
+  customHeight?: number;
+  fitMode: 'Letterbox' | 'CenterCrop' | 'Stretch';
+  matteColor: string;
 }
 
 interface ModelSettingsProps {
@@ -125,6 +136,12 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
           deinterlaceMode: 'Disabled',
           denoiseStrength: 0.0,
           crf: 20,
+          targetResolution: 'NativeScale',
+          fitMode: 'Letterbox',
+          audioCodec: 'Aac',
+          audioBitrateKbps: 192,
+          loudnessNormalization: true,
+          targetLufs: -14.0,
         });
         break;
       case 'cinematic':
@@ -141,6 +158,12 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
           deinterlaceMode: 'Disabled',
           denoiseStrength: 0.0,
           crf: 16,
+          targetResolution: 'Preset4KUHD',
+          fitMode: 'Letterbox',
+          audioCodec: 'Aac',
+          audioBitrateKbps: 320,
+          loudnessNormalization: true,
+          targetLufs: -14.0,
         });
         break;
       case 'anime':
@@ -157,6 +180,12 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
           deinterlaceMode: 'Disabled',
           denoiseStrength: 0.0,
           crf: 18,
+          targetResolution: 'NativeScale',
+          fitMode: 'Letterbox',
+          audioCodec: 'Copy',
+          audioBitrateKbps: 192,
+          loudnessNormalization: false,
+          targetLufs: -14.0,
         });
         break;
       case 'archival':
@@ -173,6 +202,12 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
           deinterlaceMode: 'Auto',
           denoiseStrength: 0.35,
           crf: 16,
+          targetResolution: 'Preset1080p',
+          fitMode: 'Letterbox',
+          audioCodec: 'PcmS24le',
+          audioBitrateKbps: 0,
+          loudnessNormalization: false,
+          targetLufs: -14.0,
         });
         break;
     }
@@ -451,6 +486,181 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
           />
         </div>
       </div>
+
+      <div className="section-title" style={{ marginTop: '20px' }}>Target Resolution & Framing</div>
+
+      <div className="form-group">
+        <label className="form-label">Target Resolution</label>
+        <select
+          className="select-input"
+          value={settings.targetResolution}
+          onChange={(e) => update('targetResolution', e.target.value as any)}
+        >
+          <option value="NativeScale">Original (Neural Scale x{settings.scaleFactor})</option>
+          <option value="Preset1080p">1080p Full HD (1920x1080)</option>
+          <option value="Preset1440p">1440p 2K QHD (2560x1440)</option>
+          <option value="Preset4KUHD">4K UHD Master (3840x2160)</option>
+          <option value="Preset8KUHD">8K UHD Master (7680x4320)</option>
+          <option value="Preset720p">720p HD (1280x720)</option>
+          <option value="SocialVertical9_16">9:16 Vertical (1080x1920 — TikTok / Reels / Shorts)</option>
+          <option value="SocialSquare1_1">1:1 Square (1080x1080 — Instagram Feed)</option>
+          <option value="CinemaWidescreen">2.39:1 Cinema Scope (3840x1606)</option>
+          <option value="Custom">Custom Dimensions...</option>
+        </select>
+      </div>
+
+      {settings.targetResolution === 'Custom' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label">Width (px)</label>
+            <input
+              type="number"
+              className="select-input"
+              value={settings.customWidth || 1920}
+              onChange={(e) => update('customWidth', parseInt(e.target.value) || 1920)}
+            />
+          </div>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label">Height (px)</label>
+            <input
+              type="number"
+              className="select-input"
+              value={settings.customHeight || 1080}
+              onChange={(e) => update('customHeight', parseInt(e.target.value) || 1080)}
+            />
+          </div>
+        </div>
+      )}
+
+      {settings.targetResolution !== 'NativeScale' && (
+        <>
+          <div className="form-group">
+            <label className="form-label">Aspect Ratio Fitting Mode</label>
+            <select
+              className="select-input"
+              value={settings.fitMode}
+              onChange={(e) => update('fitMode', e.target.value as any)}
+            >
+              <option value="Letterbox">Letterbox / Matte (Preserve Full Picture with Borders)</option>
+              <option value="CenterCrop">Center Crop Fill (Fill Canvas, Crop Excess Edges)</option>
+              <option value="Stretch">Stretch to Canvas (Disregard Aspect Ratio)</option>
+            </select>
+          </div>
+
+          {settings.fitMode === 'Letterbox' && (
+            <div className="form-group">
+              <label className="form-label">Matte Bar Color</label>
+              <select
+                className="select-input"
+                value={settings.matteColor}
+                onChange={(e) => update('matteColor', e.target.value)}
+              >
+                <option value="black">Deep Black (Pure #000000)</option>
+                <option value="#111111">Studio Charcoal (#111111)</option>
+                <option value="white">Pristine White (#FFFFFF)</option>
+              </select>
+            </div>
+          )}
+        </>
+      )}
+
+      <div className="section-title" style={{ marginTop: '20px' }}>Pro Audio Suite & Mastering</div>
+
+      <div className="form-group">
+        <label className="form-label">Audio Codec</label>
+        <select
+          className="select-input"
+          value={settings.audioCodec}
+          onChange={(e) => update('audioCodec', e.target.value as any)}
+        >
+          <option value="Copy">Passthrough Copy (Original Pristine Stream)</option>
+          <option value="Aac">AAC High-Efficiency (Broadcast & Web Master)</option>
+          <option value="Opus">Opus Low-Latency (Next-Gen Audiophile)</option>
+          <option value="Flac">FLAC Lossless Audio (Bit-Perfect Archive)</option>
+          <option value="PcmS24le">PCM 24-Bit Linear (DaVinci Resolve Studio Standard)</option>
+          <option value="PcmS16le">PCM 16-Bit Linear (CD Quality Master)</option>
+          <option value="Mute">Mute Audio (Mute / Strip All Audio Tracks)</option>
+        </select>
+      </div>
+
+      {(settings.audioCodec === 'Aac' || settings.audioCodec === 'Opus') && (
+        <div className="form-group">
+          <label className="form-label">Audio Bitrate</label>
+          <select
+            className="select-input"
+            value={settings.audioBitrateKbps}
+            onChange={(e) => update('audioBitrateKbps', parseInt(e.target.value))}
+          >
+            <option value="128">128 kbps (Efficient Voice & Streaming)</option>
+            <option value="192">192 kbps (Standard High Fidelity)</option>
+            <option value="256">256 kbps (Premium Audio Grade)</option>
+            <option value="320">320 kbps (Maximum Studio Bitrate)</option>
+          </select>
+        </div>
+      )}
+
+      {settings.audioCodec !== 'Copy' && settings.audioCodec !== 'Mute' && (
+        <div className="form-group" style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '10px', borderRadius: '6px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <label className="form-label" style={{ margin: 0, fontWeight: 600 }}>EBU R128 Loudness Normalization</label>
+            <input
+              type="checkbox"
+              checked={settings.loudnessNormalization}
+              onChange={(e) => update('loudnessNormalization', e.target.checked)}
+              style={{ cursor: 'pointer', transform: 'scale(1.2)' }}
+            />
+          </div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px', lineHeight: 1.4 }}>
+            Applies true-peak multi-pass loudness normalization preventing clipping and ensuring compliant streaming loudness.
+          </div>
+
+          {settings.loudnessNormalization && (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Target Loudness</span>
+                <span className="slider-value" style={{ color: '#38bdf8', fontWeight: 600 }}>{settings.targetLufs.toFixed(1)} LUFS</span>
+              </div>
+              <div className="slider-container">
+                <input
+                  type="range"
+                  min="-24"
+                  max="-9"
+                  step="0.5"
+                  className="range-slider"
+                  value={settings.targetLufs}
+                  onChange={(e) => update('targetLufs', parseFloat(e.target.value))}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '4px', marginTop: '6px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ fontSize: '10px', padding: '2px 6px', background: settings.targetLufs === -14.0 ? 'var(--accent-color)' : undefined }}
+                  onClick={() => update('targetLufs', -14.0)}
+                >
+                  -14.0 LUFS (YouTube/Spotify)
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ fontSize: '10px', padding: '2px 6px', background: settings.targetLufs === -16.0 ? 'var(--accent-color)' : undefined }}
+                  onClick={() => update('targetLufs', -16.0)}
+                >
+                  -16.0 LUFS (Apple Music)
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ fontSize: '10px', padding: '2px 6px', background: settings.targetLufs === -23.0 ? 'var(--accent-color)' : undefined }}
+                  onClick={() => update('targetLufs', -23.0)}
+                >
+                  -23.0 LUFS (EBU R128)
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 };

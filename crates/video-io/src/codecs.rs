@@ -56,6 +56,132 @@ pub struct OutputEncodingProfile {
     pub color_space: Option<String>, // e.g. "bt2020nc", "bt709"
     #[serde(default)]
     pub high_bit_depth: bool, // enables 10-bit/12-bit/16-bit intermediate RGB48 pipeline
+    #[serde(default)]
+    pub audio_profile: Option<AudioEncodingProfile>,
+    #[serde(default)]
+    pub geometry_profile: Option<TargetGeometryProfile>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AudioCodec {
+    Copy,
+    Aac,
+    Opus,
+    Flac,
+    PcmS16le,
+    PcmS24le,
+    Mute,
+}
+
+impl Default for AudioCodec {
+    fn default() -> Self {
+        Self::Copy
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioEncodingProfile {
+    #[serde(default)]
+    pub codec: AudioCodec,
+    #[serde(default = "default_audio_bitrate")]
+    pub bitrate_kbps: u32,
+    #[serde(default)]
+    pub loudness_normalization: bool,
+    #[serde(default = "default_lufs")]
+    pub target_lufs: f32, // default -14.0 LUFS
+}
+
+fn default_audio_bitrate() -> u32 {
+    192
+}
+
+fn default_lufs() -> f32 {
+    -14.0
+}
+
+impl Default for AudioEncodingProfile {
+    fn default() -> Self {
+        Self {
+            codec: AudioCodec::Copy,
+            bitrate_kbps: 192,
+            loudness_normalization: false,
+            target_lufs: -14.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TargetResolution {
+    NativeScale,
+    Preset720p,         // 1280x720
+    Preset1080p,        // 1920x1080
+    Preset1440p,        // 2560x1440
+    Preset4KUHD,        // 3840x2160
+    Preset8KUHD,        // 7680x4320
+    SocialVertical9_16, // 1080x1920 (Reels / Shorts / TikTok)
+    SocialSquare1_1,    // 1080x1080
+    CinemaWidescreen,   // 3840x1606 (2.39:1)
+    Custom { width: u32, height: u32 },
+}
+
+impl Default for TargetResolution {
+    fn default() -> Self {
+        Self::NativeScale
+    }
+}
+
+impl TargetResolution {
+    pub fn dimensions(&self, in_w: usize, in_h: usize) -> (usize, usize) {
+        match self {
+            Self::NativeScale => (in_w, in_h),
+            Self::Preset720p => (1280, 720),
+            Self::Preset1080p => (1920, 1080),
+            Self::Preset1440p => (2560, 1440),
+            Self::Preset4KUHD => (3840, 2160),
+            Self::Preset8KUHD => (7680, 4320),
+            Self::SocialVertical9_16 => (1080, 1920),
+            Self::SocialSquare1_1 => (1080, 1080),
+            Self::CinemaWidescreen => (3840, 1606),
+            Self::Custom { width, height } => (*width as usize, *height as usize),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FitMode {
+    Letterbox,  // Pads with black/matte bars while preserving aspect ratio
+    CenterCrop, // Crops excess to fill target aspect ratio
+    Stretch,    // Stretches to fill target aspect ratio
+}
+
+impl Default for FitMode {
+    fn default() -> Self {
+        Self::Letterbox
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TargetGeometryProfile {
+    #[serde(default)]
+    pub resolution: TargetResolution,
+    #[serde(default)]
+    pub fit_mode: FitMode,
+    #[serde(default = "default_matte_color")]
+    pub matte_color: String,
+}
+
+fn default_matte_color() -> String {
+    "black".to_string()
+}
+
+impl Default for TargetGeometryProfile {
+    fn default() -> Self {
+        Self {
+            resolution: TargetResolution::NativeScale,
+            fit_mode: FitMode::Letterbox,
+            matte_color: "black".to_string(),
+        }
+    }
 }
 
 impl Default for OutputEncodingProfile {
@@ -72,6 +198,8 @@ impl Default for OutputEncodingProfile {
             color_transfer: None,
             color_space: None,
             high_bit_depth: false,
+            audio_profile: None,
+            geometry_profile: None,
         }
     }
 }
@@ -91,6 +219,8 @@ impl OutputEncodingProfile {
             color_transfer: Some("smpte2084".to_string()),
             color_space: Some("bt2020nc".to_string()),
             high_bit_depth: true,
+            audio_profile: None,
+            geometry_profile: None,
         }
     }
 
@@ -108,6 +238,8 @@ impl OutputEncodingProfile {
             color_transfer: Some("bt709".to_string()),
             color_space: Some("bt709".to_string()),
             high_bit_depth: true,
+            audio_profile: None,
+            geometry_profile: None,
         }
     }
 
@@ -118,3 +250,65 @@ impl OutputEncodingProfile {
             || self.color_primaries.as_deref() == Some("bt2020")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_target_resolution_dimensions() {
+        assert_eq!(TargetResolution::NativeScale.dimensions(640, 480), (640, 480));
+        assert_eq!(TargetResolution::Preset720p.dimensions(640, 480), (1280, 720));
+        assert_eq!(TargetResolution::Preset1080p.dimensions(640, 480), (1920, 1080));
+        assert_eq!(TargetResolution::Preset1440p.dimensions(640, 480), (2560, 1440));
+        assert_eq!(TargetResolution::Preset4KUHD.dimensions(640, 480), (3840, 2160));
+        assert_eq!(TargetResolution::Preset8KUHD.dimensions(640, 480), (7680, 4320));
+        assert_eq!(TargetResolution::SocialVertical9_16.dimensions(640, 480), (1080, 1920));
+        assert_eq!(TargetResolution::SocialSquare1_1.dimensions(640, 480), (1080, 1080));
+        assert_eq!(TargetResolution::CinemaWidescreen.dimensions(640, 480), (3840, 1606));
+        assert_eq!(
+            TargetResolution::Custom { width: 1920, height: 800 }.dimensions(640, 480),
+            (1920, 800)
+        );
+    }
+
+    #[test]
+    fn test_audio_profile_defaults_and_serialization() {
+        let default_audio = AudioEncodingProfile::default();
+        assert_eq!(default_audio.codec, AudioCodec::Copy);
+        assert_eq!(default_audio.bitrate_kbps, 192);
+        assert!(!default_audio.loudness_normalization);
+        assert_eq!(default_audio.target_lufs, -14.0);
+
+        let json = serde_json::to_string(&default_audio).unwrap();
+        let parsed: AudioEncodingProfile = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.codec, AudioCodec::Copy);
+        assert_eq!(parsed.target_lufs, -14.0);
+
+        let custom_json = r#"{"codec":"Aac","bitrate_kbps":320,"loudness_normalization":true,"target_lufs":-14.0}"#;
+        let custom: AudioEncodingProfile = serde_json::from_str(custom_json).unwrap();
+        assert_eq!(custom.codec, AudioCodec::Aac);
+        assert_eq!(custom.bitrate_kbps, 320);
+        assert!(custom.loudness_normalization);
+        assert_eq!(custom.target_lufs, -14.0);
+    }
+
+    #[test]
+    fn test_geometry_profile_defaults_and_serialization() {
+        let default_geom = TargetGeometryProfile::default();
+        assert_eq!(default_geom.resolution, TargetResolution::NativeScale);
+        assert_eq!(default_geom.fit_mode, FitMode::Letterbox);
+        assert_eq!(default_geom.matte_color, "black");
+
+        let json = serde_json::to_string(&default_geom).unwrap();
+        let parsed: TargetGeometryProfile = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.fit_mode, FitMode::Letterbox);
+
+        let vertical_json = r##"{"resolution":"SocialVertical9_16","fit_mode":"CenterCrop","matte_color":"#101010"}"##;
+        let vertical: TargetGeometryProfile = serde_json::from_str(vertical_json).unwrap();
+        assert_eq!(vertical.resolution, TargetResolution::SocialVertical9_16);
+        assert_eq!(vertical.fit_mode, FitMode::CenterCrop);
+        assert_eq!(vertical.matte_color, "#101010");
+    }
+}
+

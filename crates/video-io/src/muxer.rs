@@ -171,11 +171,77 @@ impl VideoMuxer {
         // Pixel format for output (e.g. yuv420p, yuv420p10le, p010le, yuv422p10le)
         cmd.args(["-pix_fmt", &profile.pixel_format]);
 
+        // Apply target geometry & aspect ratio scaling filter if specified
+        if let Some(ref geom) = profile.geometry_profile {
+            let (target_w, target_h) = geom.resolution.dimensions(out_width, out_height);
+            if (target_w, target_h) != (out_width, out_height) {
+                let filter_str = match geom.fit_mode {
+                    crate::codecs::FitMode::Letterbox => {
+                        format!(
+                            "scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:(ow-iw)/2:(oh-ih)/2:{}",
+                            target_w, target_h, target_w, target_h, geom.matte_color
+                        )
+                    }
+                    crate::codecs::FitMode::CenterCrop => {
+                        format!(
+                            "scale={}:{}:force_original_aspect_ratio=increase,crop={}:{}",
+                            target_w, target_h, target_w, target_h
+                        )
+                    }
+                    crate::codecs::FitMode::Stretch => {
+                        format!("scale={}:{}", target_w, target_h)
+                    }
+                };
+                info!("Applying target geometry filter: {}", filter_str);
+                cmd.args(["-vf", &filter_str]);
+            }
+        }
+
         // Map audio & subtitles from input 1 if available
         if has_audio_source {
-            if profile.copy_audio {
-                cmd.args(["-map", "1:a?", "-c:a", "copy"]);
+            let audio_prof = profile.audio_profile.as_ref();
+            let codec = audio_prof.map(|p| &p.codec).unwrap_or(if profile.copy_audio {
+                &crate::codecs::AudioCodec::Copy
+            } else {
+                &crate::codecs::AudioCodec::Mute
+            });
+
+            match codec {
+                crate::codecs::AudioCodec::Mute => {
+                    cmd.arg("-an");
+                }
+                crate::codecs::AudioCodec::Copy => {
+                    cmd.args(["-map", "1:a?", "-c:a", "copy"]);
+                }
+                crate::codecs::AudioCodec::Aac => {
+                    let b = audio_prof.map(|p| p.bitrate_kbps).unwrap_or(192);
+                    cmd.args(["-map", "1:a?", "-c:a", "aac", "-b:a", &format!("{}k", b)]);
+                }
+                crate::codecs::AudioCodec::Opus => {
+                    let b = audio_prof.map(|p| p.bitrate_kbps).unwrap_or(128);
+                    cmd.args(["-map", "1:a?", "-c:a", "libopus", "-b:a", &format!("{}k", b)]);
+                }
+                crate::codecs::AudioCodec::Flac => {
+                    cmd.args(["-map", "1:a?", "-c:a", "flac"]);
+                }
+                crate::codecs::AudioCodec::PcmS16le => {
+                    cmd.args(["-map", "1:a?", "-c:a", "pcm_s16le"]);
+                }
+                crate::codecs::AudioCodec::PcmS24le => {
+                    cmd.args(["-map", "1:a?", "-c:a", "pcm_s24le"]);
+                }
             }
+
+            // Loudness Normalization Pass (EBU R128)
+            if let Some(ap) = audio_prof {
+                if ap.loudness_normalization
+                    && ap.codec != crate::codecs::AudioCodec::Copy
+                    && ap.codec != crate::codecs::AudioCodec::Mute
+                {
+                    cmd.args(["-af", &format!("loudnorm=I={:.1}:LRA=7:TP=-1.5", ap.target_lufs)]);
+                }
+            }
+
             if profile.copy_subtitles {
                 cmd.args(["-map", "1:s?", "-c:s", "copy"]);
             }

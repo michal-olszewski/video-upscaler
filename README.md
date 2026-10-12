@@ -14,6 +14,8 @@ Powered by a decoupled **Rust engine core**, native hardware **DirectML (DirectX
 ## 🎬 Key Highlights
 
 * **Standalone Desktop Application**: Runs as a self-contained native desktop app (`Video Upscaler.exe` on Windows, `Video Upscaler.app` on macOS) without requiring an external browser window or command prompt.
+* **Pro Audio Suite & EBU R128 Loudness Normalization (Topaz & DaVinci Parity)**: Professional audio mastering supporting passthrough copy, AAC studio encode (up to 320 kbps), Opus low-latency, FLAC lossless, uncompressed PCM 16-bit / 24-bit broadcast audio, or complete track muting. Features integrated EBU R128 true-peak loudness normalization defaulting to **-14.0 LUFS** (YouTube/Spotify standard) with presets for Apple Music (-16 LUFS) and European Broadcast (-23 LUFS).
+* **Target Resolution Rescaling & Aspect Ratio Manager (Topaz Video AI Parity)**: Flexible output geometry decoupled from neural model scaling factors. Direct presets for 720p HD, 1080p Full HD, 1440p QHD, 4K UHD (3840x2160), 8K UHD (7680x4320), 9:16 Vertical (1080x1920 for TikTok/Reels/Shorts), 1:1 Square (1080x1080 for Instagram), 2.39:1 Cinema Scope, and Custom user dimensions with Letterbox/Pillarbox (with matte color selection), Center Crop Fill, and Stretch fitting modes.
 * **Dual-Mode Temporal Flicker Suppression**: Eliminates high-frequency inter-frame texture shimmering using edge-aware bilateral temporal fusion ($T=3$ Fast vs. $T=5$ Quality) with strict 1:1 frame count invariance.
 * **Bounded VRAM Ring-Buffer Architecture**: Zero-copy 3-stage pipeline isolating Decode (Producer), Neural Inference (Worker), and Hardware Encode (Consumer) via `tokio::sync::mpsc::channel(8)` backpressure. Safely upscale 4K/8K footage on GPUs with 4–8 GB VRAM.
 * **2D Hann-Window Apodization & Tiling**: Overlapped sub-tile spatial partitioning with smooth raised-cosine weight blending completely eliminates tile seams and grid artifacts.
@@ -133,7 +135,7 @@ npm run build
 cd ../../..
 ```
 
-### 2. Run Workspace Test Suite (24 Tests)
+### 2. Run Workspace Test Suite (26 Tests)
 ```bash
 cargo test --workspace
 ```

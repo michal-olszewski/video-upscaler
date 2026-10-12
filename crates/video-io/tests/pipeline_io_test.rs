@@ -1,6 +1,7 @@
 use video_io::{
-    build_video_filter, DeinterlaceMode, DemuxOptions, FfmpegLocator, HardwareEncoder, MediaProbe,
-    OutputEncodingProfile, VideoCodecType, VideoDemuxer, VideoMuxer,
+    build_video_filter, AudioCodec, AudioEncodingProfile, DeinterlaceMode, DemuxOptions,
+    FfmpegLocator, FitMode, HardwareEncoder, MediaProbe, OutputEncodingProfile,
+    TargetGeometryProfile, TargetResolution, VideoCodecType, VideoDemuxer, VideoMuxer,
 };
 
 #[test]
@@ -239,4 +240,165 @@ fn test_deinterlace_and_denoise_demuxing() {
 
     let _ = std::fs::remove_file(test_input);
 }
+
+#[test]
+fn test_phase19_audio_mastering_and_loudness_normalization() {
+    let temp_dir = std::env::temp_dir().join("video_upscaler_audio_tests");
+    let _ = std::fs::create_dir_all(&temp_dir);
+
+    let test_input = temp_dir.join("audio_test_input.mp4");
+    let test_output_norm = temp_dir.join("audio_test_norm.mp4");
+    let test_output_mute = temp_dir.join("audio_test_mute.mp4");
+
+    let ffmpeg_bin = FfmpegLocator::find_ffmpeg().expect("ffmpeg must be found");
+
+    // 1. Generate 0.5s synthetic test video with 1kHz tone
+    let status = std::process::Command::new(&ffmpeg_bin)
+        .args([
+            "-y",
+            "-f", "lavfi",
+            "-i", "testsrc=duration=0.5:size=160x120:rate=30",
+            "-f", "lavfi",
+            "-i", "sine=frequency=1000:duration=0.5",
+            "-c:v", "libx264",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+        ])
+        .arg(&test_input)
+        .status()
+        .expect("Failed to create test audio video");
+    assert!(status.success());
+
+    // 2. Test AAC mastering with EBU R128 loudness normalization (-14 LUFS)
+    let mut profile_norm = OutputEncodingProfile::default();
+    profile_norm.encoder = HardwareEncoder::SoftwareCpu(VideoCodecType::H264);
+    profile_norm.audio_profile = Some(AudioEncodingProfile {
+        codec: AudioCodec::Aac,
+        bitrate_kbps: 192,
+        loudness_normalization: true,
+        target_lufs: -14.0,
+    });
+
+    let mut muxer_norm = VideoMuxer::open(
+        &test_output_norm,
+        160,
+        120,
+        30.0,
+        &profile_norm,
+        Some(&test_input),
+    )
+    .expect("Failed to open muxer with loudness normalization");
+
+    let dummy_frame = vec![128u8; 160 * 120 * 3];
+    for _ in 0..15 {
+        muxer_norm.write_frame(&dummy_frame).expect("Write frame failed");
+    }
+    muxer_norm.finish().expect("Finish muxer failed");
+
+    let probed_norm = MediaProbe::probe_file(&test_output_norm).expect("Probe failed on normalized file");
+    assert_eq!(probed_norm.audio_streams.len(), 1, "Expected 1 audio stream");
+    assert_eq!(probed_norm.audio_streams[0].codec_name, "aac");
+
+    // 3. Test Mute audio mastering
+    let mut profile_mute = OutputEncodingProfile::default();
+    profile_mute.encoder = HardwareEncoder::SoftwareCpu(VideoCodecType::H264);
+    profile_mute.audio_profile = Some(AudioEncodingProfile {
+        codec: AudioCodec::Mute,
+        bitrate_kbps: 0,
+        loudness_normalization: false,
+        target_lufs: -14.0,
+    });
+
+    let mut muxer_mute = VideoMuxer::open(
+        &test_output_mute,
+        160,
+        120,
+        30.0,
+        &profile_mute,
+        Some(&test_input),
+    )
+    .expect("Failed to open muxer with mute profile");
+
+    for _ in 0..15 {
+        muxer_mute.write_frame(&dummy_frame).expect("Write frame failed");
+    }
+    muxer_mute.finish().expect("Finish mute muxer failed");
+
+    let probed_mute = MediaProbe::probe_file(&test_output_mute).expect("Probe failed on muted file");
+    assert_eq!(probed_mute.audio_streams.len(), 0, "Expected 0 audio streams when muted");
+
+    let _ = std::fs::remove_file(test_input);
+    let _ = std::fs::remove_file(test_output_norm);
+    let _ = std::fs::remove_file(test_output_mute);
+}
+
+#[test]
+fn test_phase20_target_geometry_and_aspect_ratio_fitting() {
+    let temp_dir = std::env::temp_dir().join("video_upscaler_geom_tests");
+    let _ = std::fs::create_dir_all(&temp_dir);
+
+    let test_output_letterbox = temp_dir.join("geom_letterbox_720p.mp4");
+    let test_output_crop = temp_dir.join("geom_crop_custom.mp4");
+
+    // 1. Test Preset720p with Letterbox fitting (160x120 input -> 1280x720 letterboxed output)
+    let mut profile_box = OutputEncodingProfile::default();
+    profile_box.encoder = HardwareEncoder::SoftwareCpu(VideoCodecType::H264);
+    profile_box.geometry_profile = Some(TargetGeometryProfile {
+        resolution: TargetResolution::Preset720p,
+        fit_mode: FitMode::Letterbox,
+        matte_color: "black".to_string(),
+    });
+
+    let mut muxer_box = VideoMuxer::open(
+        &test_output_letterbox,
+        160,
+        120,
+        30.0,
+        &profile_box,
+        None::<&std::path::Path>,
+    )
+    .expect("Failed to open muxer with letterbox geometry");
+
+    let dummy_frame = vec![200u8; 160 * 120 * 3];
+    for _ in 0..10 {
+        muxer_box.write_frame(&dummy_frame).expect("Write frame failed");
+    }
+    muxer_box.finish().expect("Finish letterbox muxer failed");
+
+    let probed_box = MediaProbe::probe_file(&test_output_letterbox).expect("Probe failed on letterbox file");
+    assert_eq!(probed_box.video_stream.width, 1280, "Expected width 1280");
+    assert_eq!(probed_box.video_stream.height, 720, "Expected height 720");
+
+    // 2. Test Custom resolution with CenterCrop fitting (160x120 -> 200x200 square)
+    let mut profile_crop = OutputEncodingProfile::default();
+    profile_crop.encoder = HardwareEncoder::SoftwareCpu(VideoCodecType::H264);
+    profile_crop.geometry_profile = Some(TargetGeometryProfile {
+        resolution: TargetResolution::Custom { width: 200, height: 200 },
+        fit_mode: FitMode::CenterCrop,
+        matte_color: "black".to_string(),
+    });
+
+    let mut muxer_crop = VideoMuxer::open(
+        &test_output_crop,
+        160,
+        120,
+        30.0,
+        &profile_crop,
+        None::<&std::path::Path>,
+    )
+    .expect("Failed to open muxer with center crop geometry");
+
+    for _ in 0..10 {
+        muxer_crop.write_frame(&dummy_frame).expect("Write frame failed");
+    }
+    muxer_crop.finish().expect("Finish crop muxer failed");
+
+    let probed_crop = MediaProbe::probe_file(&test_output_crop).expect("Probe failed on crop file");
+    assert_eq!(probed_crop.video_stream.width, 200, "Expected width 200");
+    assert_eq!(probed_crop.video_stream.height, 200, "Expected height 200");
+
+    let _ = std::fs::remove_file(test_output_letterbox);
+    let _ = std::fs::remove_file(test_output_crop);
+}
+
 

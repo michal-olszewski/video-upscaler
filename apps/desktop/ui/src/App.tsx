@@ -151,6 +151,13 @@ export const App: React.FC = () => {
     deinterlaceMode: 'Disabled',
     denoiseStrength: 0.0,
     crf: 18,
+    audioCodec: 'Copy',
+    audioBitrateKbps: 192,
+    loudnessNormalization: false,
+    targetLufs: -14.0,
+    targetResolution: 'NativeScale',
+    fitMode: 'Letterbox',
+    matteColor: 'black',
   });
 
   const loadModels = () => {
@@ -384,18 +391,35 @@ export const App: React.FC = () => {
       color_space = 'bt709';
     }
 
+    const audio_profile = {
+      codec: settings.audioCodec,
+      bitrate_kbps: settings.audioBitrateKbps,
+      loudness_normalization: settings.loudnessNormalization,
+      target_lufs: settings.targetLufs,
+    };
+
+    const geometry_profile = {
+      resolution: settings.targetResolution === 'Custom'
+        ? { Custom: { width: settings.customWidth || 1920, height: settings.customHeight || 1080 } }
+        : settings.targetResolution,
+      fit_mode: settings.fitMode,
+      matte_color: settings.matteColor || 'black',
+    };
+
     return {
       encoder: encoderEnum,
       crf: settings.crf,
       bitrate_kbps: null,
       preset: 'medium',
       pixel_format,
-      copy_audio: true,
+      copy_audio: settings.audioCodec === 'Copy',
       copy_subtitles: true,
       color_primaries,
       color_transfer,
       color_space,
       high_bit_depth,
+      audio_profile,
+      geometry_profile,
     };
   };
 
