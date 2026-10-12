@@ -34,4 +34,4 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg"]
 rayon = "1.10"
 
 # Inference Runtime
-ort = { version = "2.0.0-rc.9", default-features = false, features = ["std", "ndarray", "directml", "download-binaries", "tls-rustls"] }
+ort = { version = "2.0.0-rc.9", default-features = false, features = ["std", "ndarray", "download-binaries", "tls-rustls"] }

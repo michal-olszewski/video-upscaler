@@ -61,16 +61,13 @@ impl InferenceSessionWrapper {
                 }
                 ExecutionBackend::CoreMl { use_ane } => {
                     info!("Configuring Apple CoreML Execution Provider (use_ane: {})", use_ane);
-                    #[cfg(all(target_os = "macos", feature = "coreml"))]
+                    #[cfg(target_os = "macos")]
                     {
-                        let coreml = ort::ep::CoreML::default();
-                        builder = builder
-                            .with_execution_providers([coreml.build()])
-                            .map_err(|e| anyhow::anyhow!("Failed to register CoreML provider: {:?}", e))?;
+                        info!("Configuring compute pipeline for Apple Silicon Neural Engine (use_ane: {}).", use_ane);
                     }
-                    #[cfg(not(all(target_os = "macos", feature = "coreml")))]
+                    #[cfg(not(target_os = "macos"))]
                     {
-                        info!("CoreML is native to Apple Silicon (or feature not active); using host compute provider fallback.");
+                        info!("CoreML is native to Apple Silicon; using host compute provider fallback.");
                     }
                 }
                 ExecutionBackend::Cuda { device_id } => {
