@@ -25,6 +25,29 @@ impl VideoMuxer {
         profile: &OutputEncodingProfile,
         audio_source_path: Option<Q>,
     ) -> Result<Self> {
+        Self::open_with_trim(
+            output_path,
+            out_width,
+            out_height,
+            frame_rate,
+            profile,
+            audio_source_path,
+            None,
+            None,
+        )
+    }
+
+    /// Spawns an FFmpeg encoding process with optional trim start and duration for audio synchronization
+    pub fn open_with_trim<P: AsRef<Path>, Q: AsRef<Path>>(
+        output_path: P,
+        out_width: usize,
+        out_height: usize,
+        frame_rate: f64,
+        profile: &OutputEncodingProfile,
+        audio_source_path: Option<Q>,
+        trim_start: Option<f64>,
+        trim_duration: Option<f64>,
+    ) -> Result<Self> {
         let out_path = output_path.as_ref().to_path_buf();
         let ffmpeg_bin = FfmpegLocator::find_ffmpeg()?;
         let encoder_name = profile.encoder.ffmpeg_encoder_name();
@@ -60,6 +83,14 @@ impl VideoMuxer {
         // Input 1: Original file for audio & subtitles passthrough if provided
         let has_audio_source = audio_source_path.is_some();
         if let Some(ref audio_path) = audio_source_path {
+            if let Some(st) = trim_start {
+                if st > 0.001 {
+                    cmd.args(["-ss", &format!("{:.3}", st)]);
+                }
+            }
+            if let Some(dur) = trim_duration {
+                cmd.args(["-t", &format!("{:.3}", dur)]);
+            }
             cmd.arg("-i").arg(audio_path.as_ref());
         }
 

@@ -67,6 +67,8 @@ impl PreviewEngine {
             high_bit_depth: false,
             deinterlace_mode,
             denoise_strength,
+            start_time: None,
+            end_time: None,
         };
         let vf_filter = video_io::build_video_filter(&demux_opts, metadata.video_stream.is_interlaced());
 

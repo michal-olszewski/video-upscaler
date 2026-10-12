@@ -176,6 +176,8 @@ mod tests {
             interpolation_mode: None,
             deinterlace_mode: None,
             denoise_strength: None,
+            trim_start: None,
+            trim_end: None,
             encoding_profile: OutputEncodingProfile::default(),
         }
     }

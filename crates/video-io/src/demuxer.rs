@@ -27,6 +27,8 @@ pub struct DemuxOptions {
     pub high_bit_depth: bool,
     pub deinterlace_mode: DeinterlaceMode,
     pub denoise_strength: f32, // 0.0 = disabled, 0.0..=1.0
+    pub start_time: Option<f64>,
+    pub end_time: Option<f64>,
 }
 
 impl Default for DemuxOptions {
@@ -35,6 +37,8 @@ impl Default for DemuxOptions {
             high_bit_depth: false,
             deinterlace_mode: DeinterlaceMode::Disabled,
             denoise_strength: 0.0,
+            start_time: None,
+            end_time: None,
         }
     }
 }
@@ -134,12 +138,21 @@ impl VideoDemuxer {
         );
 
         let mut cmd = Command::new(&ffmpeg_bin);
-        cmd.args([
-            "-hwaccel",
-            "auto",
-            "-i",
-        ])
-        .arg(&path);
+        cmd.args(["-hwaccel", "auto"]);
+
+        if let Some(st) = options.start_time {
+            if st > 0.001 {
+                cmd.args(["-ss", &format!("{:.3}", st)]);
+            }
+        }
+
+        cmd.args(["-i"]).arg(&path);
+
+        if let Some(et) = options.end_time {
+            let st = options.start_time.unwrap_or(0.0);
+            let duration = (et - st).max(0.01);
+            cmd.args(["-t", &format!("{:.3}", duration)]);
+        }
 
         if let Some(ref vf) = vf_filter {
             cmd.args(["-vf", vf]);

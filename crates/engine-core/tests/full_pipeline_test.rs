@@ -52,6 +52,8 @@ async fn test_full_video_upscale_pipeline() {
         interpolation_mode: None,
         deinterlace_mode: None,
         denoise_strength: None,
+        trim_start: None,
+        trim_end: None,
         encoding_profile: OutputEncodingProfile::default(),
     };
 
@@ -147,6 +149,8 @@ async fn test_full_10bit_hdr10_upscale_pipeline() {
         interpolation_mode: None,
         deinterlace_mode: None,
         denoise_strength: None,
+        trim_start: None,
+        trim_end: None,
         encoding_profile: hdr_profile,
     };
 
@@ -231,6 +235,8 @@ async fn test_motion_interpolation_pipeline() {
         interpolation_mode: Some(engine_core::interpolation::InterpolationMode::DoubleFps),
         deinterlace_mode: None,
         denoise_strength: None,
+        trim_start: None,
+        trim_end: None,
         encoding_profile: OutputEncodingProfile::default(),
     };
 
@@ -318,6 +324,8 @@ async fn test_deinterlace_and_denoise_upscale_pipeline() {
         interpolation_mode: None,
         deinterlace_mode: Some(video_io::DeinterlaceMode::BwdifSameRate),
         denoise_strength: Some(0.35),
+        trim_start: None,
+        trim_end: None,
         encoding_profile: OutputEncodingProfile::default(),
     };
 
@@ -346,6 +354,95 @@ async fn test_deinterlace_and_denoise_upscale_pipeline() {
     assert_eq!(out_meta.video_stream.width, 320);
     assert_eq!(out_meta.video_stream.height, 240);
     assert!(!out_meta.audio_streams.is_empty(), "Audio track must be preserved");
+
+    let _ = std::fs::remove_file(test_in);
+    let _ = std::fs::remove_file(test_out);
+}
+
+#[tokio::test]
+async fn test_trimmed_range_upscale_pipeline() {
+    let temp_dir = std::env::temp_dir().join("video_upscaler_engine_tests");
+    let _ = std::fs::create_dir_all(&temp_dir);
+
+    let test_in = temp_dir.join("input_full_1sec.mp4");
+    let test_out = temp_dir.join("trimmed_upscaled.mp4");
+
+    let ffmpeg_bin = FfmpegLocator::find_ffmpeg().expect("FFmpeg must be found");
+
+    // 1. Generate 1.0-second test video (30 fps = 30 frames) with tone audio
+    let gen_status = std::process::Command::new(&ffmpeg_bin)
+        .args([
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=duration=1.0:size=160x120:rate=30",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=1.0",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+        ])
+        .arg(&test_in)
+        .output()
+        .expect("Failed to create test video");
+
+    assert!(gen_status.status.success(), "FFmpeg generation failed");
+
+    // 2. Set up upscale job request targeting trimmed range: 0.2s to 0.6s (0.4s duration = ~12 frames)
+    let request = UpscaleJobRequest {
+        id: "job-trim-test-005".to_string(),
+        input_path: test_in.to_string_lossy().to_string(),
+        output_path: test_out.to_string_lossy().to_string(),
+        model_id: "compact-span-x2".to_string(),
+        backend: ExecutionBackend::DirectMl { device_id: 0 },
+        tile_size: Some(128),
+        tile_padding: Some(16),
+        film_grain: 0.0,
+        temporal_mode: Some(engine_core::temporal::TemporalMode::Disabled),
+        interpolation_mode: None,
+        deinterlace_mode: None,
+        denoise_strength: None,
+        trim_start: Some(0.2),
+        trim_end: Some(0.6),
+        encoding_profile: OutputEncodingProfile::default(),
+    };
+
+    let (tx, mut rx) = mpsc::channel::<JobProgress>(64);
+    let pipeline = UpscalePipeline::new();
+
+    let pipeline_handle = tokio::spawn(async move {
+        pipeline.execute(request, tx).await
+    });
+
+    let mut final_progress = None;
+    while let Some(progress) = rx.recv().await {
+        final_progress = Some(progress);
+    }
+
+    let result = pipeline_handle.await.expect("Task join error");
+    assert!(result.is_ok(), "Pipeline execution failed: {:?}", result.err());
+
+    let last_prog = final_progress.expect("Expected progress");
+    assert_eq!(last_prog.state, JobState::Completed);
+
+    // 3. Verify output trimmed video properties
+    assert!(test_out.exists(), "Output trimmed file must exist");
+    let out_meta = MediaProbe::probe_file(&test_out).expect("Failed to probe output video");
+
+    assert_eq!(out_meta.video_stream.width, 320);
+    assert_eq!(out_meta.video_stream.height, 240);
+    assert!(
+        out_meta.duration_seconds < 0.7,
+        "Expected trimmed duration < 0.7s, got {:.2}s",
+        out_meta.duration_seconds
+    );
+    assert!(!out_meta.audio_streams.is_empty(), "Audio track must be preserved in trimmed output");
 
     let _ = std::fs::remove_file(test_in);
     let _ = std::fs::remove_file(test_out);

@@ -34,6 +34,10 @@ pub struct UpscaleJobRequest {
     pub deinterlace_mode: Option<video_io::DeinterlaceMode>,
     #[serde(default)]
     pub denoise_strength: Option<f32>,
+    #[serde(default)]
+    pub trim_start: Option<f64>,
+    #[serde(default)]
+    pub trim_end: Option<f64>,
     pub encoding_profile: OutputEncodingProfile,
 }
 

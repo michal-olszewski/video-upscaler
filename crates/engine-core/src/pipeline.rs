@@ -57,6 +57,31 @@ impl UpscalePipeline {
 
         let deinterlace_mode = request.deinterlace_mode.unwrap_or(video_io::DeinterlaceMode::Disabled);
         let denoise_strength = request.denoise_strength.unwrap_or(0.0);
+        let trim_start = request.trim_start;
+        let trim_end = request.trim_end;
+
+        // Calculate effective source frames if in/out trim markers are set
+        let effective_source_frames = match (trim_start, trim_end) {
+            (Some(st), Some(et)) if et > st => {
+                let duration = et - st;
+                ((duration * fps).round() as u64).max(1)
+            }
+            (Some(st), None) if metadata.duration_seconds > st => {
+                let duration = metadata.duration_seconds - st;
+                ((duration * fps).round() as u64).max(1)
+            }
+            (None, Some(et)) => {
+                ((et * fps).round() as u64).max(1)
+            }
+            _ => total_frames,
+        };
+
+        let trim_duration = match (trim_start, trim_end) {
+            (Some(st), Some(et)) if et > st => Some(et - st),
+            (Some(st), None) if metadata.duration_seconds > st => Some(metadata.duration_seconds - st),
+            (None, Some(et)) => Some(et),
+            _ => None,
+        };
 
         let (deint_fps_mult, deint_frames_mult) = if deinterlace_mode == video_io::DeinterlaceMode::BwdifBob {
             (2.0, 2u64)
@@ -65,15 +90,15 @@ impl UpscalePipeline {
         };
 
         let post_deint_fps = fps * deint_fps_mult;
-        let post_deint_frames = total_frames * deint_frames_mult;
+        let post_deint_frames = effective_source_frames * deint_frames_mult;
 
         let interpolation_mode = request.interpolation_mode.unwrap_or(InterpolationMode::Disabled);
         let out_fps = interpolation_mode.calculate_output_fps(post_deint_fps);
         let expected_total_frames = interpolation_mode.calculate_total_frames(post_deint_frames);
 
         info!(
-            "Job {}: Streaming {}x{} -> {}x{} @ {:.2} fps ({} source frames -> {} frames @ {:.2} fps) using {} [Deint: {:?}, Denoise: {:.2}, Interp: {:?}]",
-            request.id, in_w, in_h, out_w, out_h, fps, total_frames, expected_total_frames, out_fps, model_desc.name, deinterlace_mode, denoise_strength, interpolation_mode
+            "Job {}: Streaming {}x{} -> {}x{} @ {:.2} fps ({} source frames -> {} frames @ {:.2} fps) using {} [Deint: {:?}, Denoise: {:.2}, Trim: {:?}-{:?}, Interp: {:?}]",
+            request.id, in_w, in_h, out_w, out_h, fps, effective_source_frames, expected_total_frames, out_fps, model_desc.name, deinterlace_mode, denoise_strength, trim_start, trim_end, interpolation_mode
         );
 
         let tile_size = request.tile_size.unwrap_or(model_desc.default_tile_size);
@@ -129,6 +154,8 @@ impl UpscalePipeline {
             high_bit_depth,
             deinterlace_mode,
             denoise_strength,
+            start_time: trim_start,
+            end_time: trim_end,
         };
 
         let decode_task = tokio::task::spawn_blocking(move || -> Result<u64> {
@@ -319,13 +346,15 @@ impl UpscalePipeline {
         progress.state = JobState::Processing;
         let _ = progress_tx.send(progress.clone()).await;
 
-        let mut muxer = VideoMuxer::open(
+        let mut muxer = VideoMuxer::open_with_trim(
             &output_path,
             out_w,
             out_h,
             out_fps,
             &encoding_profile,
             Some(&audio_src),
+            trim_start,
+            trim_duration,
         )?;
 
         let start_time = Instant::now();

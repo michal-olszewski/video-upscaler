@@ -1,4 +1,6 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+
+export type ViewMode = 'curtain' | 'sideBySide' | 'toggle';
 
 interface SplitPlayerProps {
   originalSrc?: string;
@@ -17,6 +19,9 @@ export const SplitPlayer: React.FC<SplitPlayerProps> = ({
   isLoading = false,
   loadingMessage = 'Processing DirectML Super-Resolution...',
 }) => {
+  const [viewMode, setViewMode] = useState<ViewMode>('curtain');
+  const [isHoldingToggle, setIsHoldingToggle] = useState<boolean>(false);
+
   const [sliderPos, setSliderPos] = useState<number>(50); // percentage 0..100
   const [zoom, setZoom] = useState<number>(1.0); // 0.5 to 8.0
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -157,6 +162,29 @@ export const SplitPlayer: React.FC<SplitPlayerProps> = ({
 
   const hasImages = Boolean(originalSrc && upscaledSrc);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && !e.repeat && viewMode === 'toggle') {
+        const target = e.target as HTMLElement;
+        if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
+        e.preventDefault();
+        setIsHoldingToggle(true);
+      }
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && viewMode === 'toggle') {
+        e.preventDefault();
+        setIsHoldingToggle(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [viewMode]);
+
   return (
     <div
       ref={containerRef}
@@ -190,13 +218,38 @@ export const SplitPlayer: React.FC<SplitPlayerProps> = ({
 
       {hasImages ? (
         <>
+          {/* View Mode Switcher Toolbar (Top-Left) */}
+          <div className="view-mode-toolbar">
+            <button
+              className={`view-mode-btn ${viewMode === 'curtain' ? 'active' : ''}`}
+              onClick={() => setViewMode('curtain')}
+              title="Curtain Split Comparison Slider"
+            >
+              <span>◧</span> Curtain
+            </button>
+            <button
+              className={`view-mode-btn ${viewMode === 'sideBySide' ? 'active' : ''}`}
+              onClick={() => setViewMode('sideBySide')}
+              title="Side-by-Side Dual Synchronized View"
+            >
+              <span>◫</span> Side-by-Side
+            </button>
+            <button
+              className={`view-mode-btn ${viewMode === 'toggle' ? 'active' : ''}`}
+              onClick={() => setViewMode('toggle')}
+              title="A/B Toggle (Press and Hold Spacebar)"
+            >
+              <span>⇋</span> A/B Toggle
+            </button>
+          </div>
+
           {/* Zoom and Pan Viewport Canvas */}
           <div
             style={{
               position: 'absolute',
               inset: 0,
               overflow: 'hidden',
-              cursor: isDraggingSlider
+              cursor: isDraggingSlider && viewMode === 'curtain'
                 ? 'ew-resize'
                 : isPanning
                 ? 'grabbing'
@@ -207,83 +260,199 @@ export const SplitPlayer: React.FC<SplitPlayerProps> = ({
             onPointerDown={handleCanvasPointerDown}
             onDoubleClick={handleDoubleClick}
           >
-            {/* Background layer: Original input */}
-            <div
-              className="split-layer layer-original"
-              style={{
-                backgroundColor: '#0b0c10',
-                overflow: 'hidden',
-              }}
-            >
-              <div
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-                  transformOrigin: 'center center',
-                  transition: isPanning ? 'none' : 'transform 0.05s ease-out',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <img
-                  src={originalSrc}
-                  alt="Original Input"
+            {viewMode === 'curtain' && (
+              <>
+                {/* Background layer: Original input */}
+                <div
+                  className="split-layer layer-original"
+                  style={{
+                    backgroundColor: '#0b0c10',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                      transformOrigin: 'center center',
+                      transition: isPanning ? 'none' : 'transform 0.05s ease-out',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <img
+                      src={originalSrc}
+                      alt="Original Input"
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'contain',
+                        pointerEvents: 'none',
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Foreground layer: Upscaled output (clipped by slider position in viewport space) */}
+                <div
+                  className="split-layer layer-upscaled"
+                  style={{
+                    clipPath: `inset(0 0 0 ${sliderPos}%)`,
+                    backgroundColor: 'transparent',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                      transformOrigin: 'center center',
+                      transition: isPanning ? 'none' : 'transform 0.05s ease-out',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <img
+                      src={upscaledSrc}
+                      alt="Neural Upscaled"
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'contain',
+                        pointerEvents: 'none',
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Vertical comparison divider bar */}
+                <div
+                  className="split-divider"
+                  style={{ left: `${sliderPos}%` }}
+                  onPointerDown={handleSliderPointerDown}
+                >
+                  <div className="split-handle">
+                    <span>⇄</span>
+                  </div>
+                </div>
+
+                {/* Corner Tags */}
+                <div className="layer-tag tag-original">{originalLabel}</div>
+                <div className="layer-tag tag-upscaled">{upscaledLabel}</div>
+              </>
+            )}
+
+            {viewMode === 'sideBySide' && (
+              <div className="side-by-side-container">
+                {/* Left Pane: Original */}
+                <div className="side-by-side-pane">
+                  <div
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                      transformOrigin: 'center center',
+                      transition: isPanning ? 'none' : 'transform 0.05s ease-out',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <img
+                      src={originalSrc}
+                      alt="Original Input"
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'contain',
+                        pointerEvents: 'none',
+                      }}
+                    />
+                  </div>
+                  <div className="layer-tag tag-original">{originalLabel}</div>
+                </div>
+
+                {/* Right Pane: Upscaled */}
+                <div className="side-by-side-pane">
+                  <div
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                      transformOrigin: 'center center',
+                      transition: isPanning ? 'none' : 'transform 0.05s ease-out',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <img
+                      src={upscaledSrc}
+                      alt="Neural Upscaled"
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'contain',
+                        pointerEvents: 'none',
+                      }}
+                    />
+                  </div>
+                  <div className="layer-tag tag-upscaled">{upscaledLabel}</div>
+                </div>
+              </div>
+            )}
+
+            {viewMode === 'toggle' && (
+              <>
+                <div
                   style={{
                     width: '100%',
                     height: '100%',
-                    objectFit: 'contain',
-                    pointerEvents: 'none',
+                    transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                    transformOrigin: 'center center',
+                    transition: isPanning ? 'none' : 'transform 0.05s ease-out',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                   }}
-                />
-              </div>
-            </div>
+                >
+                  <img
+                    src={isHoldingToggle ? originalSrc : upscaledSrc}
+                    alt={isHoldingToggle ? 'Original Input' : 'Neural Upscaled'}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'contain',
+                      pointerEvents: 'none',
+                    }}
+                  />
+                </div>
 
-            {/* Foreground layer: Upscaled output (clipped by slider position in viewport space) */}
-            <div
-              className="split-layer layer-upscaled"
-              style={{
-                clipPath: `inset(0 0 0 ${sliderPos}%)`,
-                backgroundColor: 'transparent',
-                overflow: 'hidden',
-              }}
-            >
-              <div
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-                  transformOrigin: 'center center',
-                  transition: isPanning ? 'none' : 'transform 0.05s ease-out',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <img
-                  src={upscaledSrc}
-                  alt="Neural Upscaled"
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                    objectFit: 'contain',
-                    pointerEvents: 'none',
-                  }}
-                />
-              </div>
-            </div>
+                {/* Toggle Banner Pill */}
+                <div
+                  className="toggle-pill-banner"
+                  onMouseDown={() => setIsHoldingToggle(true)}
+                  onMouseUp={() => setIsHoldingToggle(false)}
+                  onTouchStart={() => setIsHoldingToggle(true)}
+                  onTouchEnd={() => setIsHoldingToggle(false)}
+                >
+                  <span style={{ color: isHoldingToggle ? '#f59e0b' : '#38bdf8' }}>
+                    {isHoldingToggle ? '👁 Showing Original Input' : '✨ Showing Super Scale Output'}
+                  </span>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>
+                    (Hold Space or Click)
+                  </span>
+                </div>
 
-            {/* Vertical comparison divider bar */}
-            <div
-              className="split-divider"
-              style={{ left: `${sliderPos}%` }}
-              onPointerDown={handleSliderPointerDown}
-            >
-              <div className="split-handle">
-                <span>⇄</span>
-              </div>
-            </div>
+                <div className={`layer-tag ${isHoldingToggle ? 'tag-original' : 'tag-upscaled'}`}>
+                  {isHoldingToggle ? originalLabel : upscaledLabel}
+                </div>
+              </>
+            )}
           </div>
 
           {/* Floating Zoom & Pan Controls Toolbar (Top-Right) */}
@@ -349,10 +518,6 @@ export const SplitPlayer: React.FC<SplitPlayerProps> = ({
               />
             </div>
           )}
-
-          {/* Corner Tags */}
-          <div className="layer-tag tag-original">{originalLabel}</div>
-          <div className="layer-tag tag-upscaled">{upscaledLabel}</div>
         </>
       ) : (
         <div

@@ -61,12 +61,83 @@ export const App: React.FC = () => {
   const [isPreviewLoading, setIsPreviewLoading] = useState<boolean>(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
+  const [trimStart, setTrimStart] = useState<number | null>(null);
+  const [trimEnd, setTrimEnd] = useState<number | null>(null);
+
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [progress, setProgress] = useState<JobProgress | null>(null);
 
   // Batch queue state
   const [queueJobs, setQueueJobs] = useState<BatchJobItem[]>([]);
   const [isQueueActive, setIsQueueActive] = useState<boolean>(false);
+
+  const stepTime = (delta: number) => {
+    const maxDur = metadata ? metadata.duration_seconds : 1000;
+    setPreviewTime((prev) => Math.max(0, Math.min(Number((prev + delta).toFixed(3)), maxDur)));
+  };
+
+  const handleSetIn = () => {
+    setTrimStart(previewTime);
+    if (trimEnd !== null && previewTime > trimEnd) {
+      setTrimEnd(null);
+    }
+  };
+
+  const handleSetOut = () => {
+    setTrimEnd(previewTime);
+    if (trimStart !== null && previewTime < trimStart) {
+      setTrimStart(null);
+    }
+  };
+
+  const handleResetTrim = () => {
+    setTrimStart(null);
+    setTrimEnd(null);
+  };
+
+  const formatTimecode = (secs: number, fps: number = 30) => {
+    const safeFps = fps > 0 ? fps : 30;
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = Math.floor(secs % 60);
+    const f = Math.floor((secs % 1) * safeFps);
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${pad(h)}:${pad(m)}:${pad(s)}:${pad(f)}`;
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
+        return;
+      }
+      if (e.key === 'i' || e.key === 'I') {
+        e.preventDefault();
+        setTrimStart(previewTime);
+        if (trimEnd !== null && previewTime > trimEnd) {
+          setTrimEnd(null);
+        }
+      } else if (e.key === 'o' || e.key === 'O') {
+        e.preventDefault();
+        setTrimEnd(previewTime);
+        if (trimStart !== null && previewTime < trimStart) {
+          setTrimStart(null);
+        }
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        const fps = metadata?.video_stream?.frame_rate || 30;
+        const delta = e.shiftKey ? -1.0 : -1.0 / fps;
+        stepTime(delta);
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        const fps = metadata?.video_stream?.frame_rate || 30;
+        const delta = e.shiftKey ? 1.0 : 1.0 / fps;
+        stepTime(delta);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [previewTime, trimStart, trimEnd, metadata]);
 
   const [settings, setSettings] = useState<UpscaleSettings>({
     modelId: 'compact-span-x2',
@@ -346,6 +417,8 @@ export const App: React.FC = () => {
       deinterlace_mode: settings.deinterlaceMode,
       denoise_strength: settings.denoiseStrength,
       encoding_profile: buildEncodingProfile(),
+      trim_start: trimStart,
+      trim_end: trimEnd,
     };
 
     try {
@@ -392,6 +465,8 @@ export const App: React.FC = () => {
       deinterlace_mode: settings.deinterlaceMode,
       denoise_strength: settings.denoiseStrength,
       encoding_profile: buildEncodingProfile(),
+      trim_start: trimStart,
+      trim_end: trimEnd,
     };
 
     try {
@@ -435,6 +510,8 @@ export const App: React.FC = () => {
           deinterlace_mode: settings.deinterlaceMode,
           denoise_strength: settings.denoiseStrength,
           encoding_profile: profile,
+          trim_start: null,
+          trim_end: null,
         };
         await fetch('/api/queue/add', {
           method: 'POST',
@@ -679,39 +756,169 @@ export const App: React.FC = () => {
                 )}
               </div>
 
-              {/* Frame Preview Controls & Timeline */}
+              {/* Frame Preview Controls & Interactive Timeline Trimmer */}
               <div
                 style={{
-                  padding: '10px 20px',
+                  padding: '12px 20px',
                   backgroundColor: 'var(--bg-secondary)',
                   borderTop: '1px solid var(--border-color)',
                   display: 'flex',
-                  alignItems: 'center',
-                  gap: '16px',
+                  flexDirection: 'column',
+                  gap: '8px',
                 }}
               >
-                <span style={{ fontSize: '12px', color: 'var(--text-muted)', minWidth: '85px' }}>
-                  Preview Time:
-                </span>
-                <input
-                  type="range"
-                  min="0"
-                  max={metadata ? metadata.duration_seconds : 10}
-                  step="0.05"
-                  className="range-slider"
-                  value={previewTime}
-                  onChange={(e) => setPreviewTime(parseFloat(e.target.value))}
-                />
-                <span style={{ fontSize: '13px', fontVariantNumeric: 'tabular-nums', minWidth: '50px' }}>
-                  {previewTime.toFixed(2)}s
-                </span>
-                <button
-                  className="btn-secondary"
-                  disabled={isPreviewLoading || !inputPath}
-                  onClick={handleGeneratePreview}
-                >
-                  {isPreviewLoading ? 'Generating...' : '🔍 Extract Frame Preview'}
-                </button>
+                {/* Upper Row: Timecode, Slider scrubber with Trim Range Bar, Preview Button */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                  <div style={{ minWidth: '150px', display: 'flex', flexDirection: 'column' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Playhead / Duration
+                    </span>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#f3f4f6', fontVariantNumeric: 'tabular-nums' }}>
+                      {formatTimecode(previewTime, metadata?.video_stream?.frame_rate || 30)} / {formatTimecode(metadata?.duration_seconds || 0, metadata?.video_stream?.frame_rate || 30)}
+                    </span>
+                  </div>
+
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
+                    <input
+                      type="range"
+                      min="0"
+                      max={metadata ? metadata.duration_seconds : 10}
+                      step="0.01"
+                      className="range-slider"
+                      value={previewTime}
+                      onChange={(e) => setPreviewTime(parseFloat(e.target.value))}
+                    />
+                    <div className="trim-bar-container">
+                      {(trimStart !== null || trimEnd !== null) && (
+                        <div
+                          className="trim-range-highlight"
+                          style={{
+                            left: `${((trimStart ?? 0) / (metadata?.duration_seconds || 10)) * 100}%`,
+                            width: `${Math.max(
+                              0.5,
+                              (((trimEnd ?? (metadata?.duration_seconds || 10)) - (trimStart ?? 0)) /
+                                (metadata?.duration_seconds || 10)) *
+                                100
+                            )}%`,
+                          }}
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  <button
+                    className="btn-secondary"
+                    disabled={isPreviewLoading || !inputPath}
+                    onClick={handleGeneratePreview}
+                    style={{ whiteSpace: 'nowrap' }}
+                  >
+                    {isPreviewLoading ? 'Generating...' : '🔍 Extract Frame Preview'}
+                  </button>
+                </div>
+
+                {/* Lower Row: Frame Stepping, In/Out Trimming Controls & Segment Status */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginRight: '4px' }}>Step:</span>
+                    <button className="step-btn" onClick={() => stepTime(-1.0)} title="Step Backward 1 Second (Shift+Left)">
+                      ◀ -1s
+                    </button>
+                    <button
+                      className="step-btn"
+                      onClick={() => stepTime(-(1.0 / (metadata?.video_stream?.frame_rate || 30)))}
+                      title="Step Backward 1 Frame (Left Arrow)"
+                    >
+                      ◀ -1f
+                    </button>
+                    <button
+                      className="step-btn"
+                      onClick={() => stepTime(1.0 / (metadata?.video_stream?.frame_rate || 30))}
+                      title="Step Forward 1 Frame (Right Arrow)"
+                    >
+                      +1f ▶
+                    </button>
+                    <button className="step-btn" onClick={() => stepTime(1.0)} title="Step Forward 1 Second (Shift+Right)">
+                      +1s ▶
+                    </button>
+
+                    <div style={{ width: '1px', height: '16px', backgroundColor: 'var(--border-color)', margin: '0 6px' }} />
+
+                    <button
+                      className={`step-btn ${trimStart !== null ? 'active' : ''}`}
+                      onClick={handleSetIn}
+                      style={{
+                        backgroundColor: trimStart !== null ? 'rgba(56, 189, 248, 0.2)' : undefined,
+                        borderColor: trimStart !== null ? '#38bdf8' : undefined,
+                        color: trimStart !== null ? '#38bdf8' : undefined,
+                      }}
+                      title="Set In Point (Key: I)"
+                    >
+                      [ Set In (I)
+                    </button>
+                    <button
+                      className={`step-btn ${trimEnd !== null ? 'active' : ''}`}
+                      onClick={handleSetOut}
+                      style={{
+                        backgroundColor: trimEnd !== null ? 'rgba(56, 189, 248, 0.2)' : undefined,
+                        borderColor: trimEnd !== null ? '#38bdf8' : undefined,
+                        color: trimEnd !== null ? '#38bdf8' : undefined,
+                      }}
+                      title="Set Out Point (Key: O)"
+                    >
+                      ] Set Out (O)
+                    </button>
+                    {(trimStart !== null || trimEnd !== null) && (
+                      <button
+                        className="step-btn"
+                        onClick={handleResetTrim}
+                        title="Clear In/Out Trim (Export Entire Clip)"
+                      >
+                        ⟲ Full Clip
+                      </button>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {trimStart !== null || trimEnd !== null ? (
+                      <span
+                        className="meta-chip"
+                        style={{
+                          backgroundColor: 'rgba(6, 182, 212, 0.15)',
+                          borderColor: '#06b6d4',
+                          color: '#22d3ee',
+                          fontSize: '11px',
+                        }}
+                      >
+                        ✂ Trim Range: [
+                        {formatTimecode(trimStart ?? 0, metadata?.video_stream?.frame_rate || 30)} →{' '}
+                        {formatTimecode(trimEnd ?? (metadata?.duration_seconds || 0), metadata?.video_stream?.frame_rate || 30)}
+                        ]{' '}
+                        (
+                        {(
+                          (trimEnd ?? (metadata?.duration_seconds || 0)) - (trimStart ?? 0)
+                        ).toFixed(2)}
+                        s /{' '}
+                        {Math.round(
+                          ((trimEnd ?? (metadata?.duration_seconds || 0)) - (trimStart ?? 0)) *
+                            (metadata?.video_stream?.frame_rate || 30)
+                        )}{' '}
+                        frames)
+                      </span>
+                    ) : (
+                      <span
+                        className="meta-chip"
+                        style={{
+                          fontSize: '11px',
+                          color: 'var(--text-muted)',
+                        }}
+                      >
+                        🎞 Export Mode: Entire Video (
+                        {metadata?.duration_seconds ? `${metadata.duration_seconds.toFixed(1)}s` : 'Full'}
+                        )
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* Live Upscale Progress Bar */}
@@ -830,7 +1037,11 @@ export const App: React.FC = () => {
               disabled={isProcessing}
               onClick={handleStartRender}
             >
-              {isProcessing ? 'Processing Video...' : `Export ${settings.scaleFactor}x Super Resolution`}
+              {isProcessing
+                ? 'Processing Video...'
+                : trimStart !== null || trimEnd !== null
+                ? `Export Trimmed Range (${settings.scaleFactor}x Super Scale)`
+                : `Export ${settings.scaleFactor}x Super Resolution`}
             </button>
             <button
               className="btn-secondary"
