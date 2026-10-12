@@ -1,6 +1,7 @@
 use crate::backend::ExecutionBackend;
 use anyhow::{Context, Result};
 use ndarray::Array4;
+#[cfg(windows)]
 use ort::ep::DirectML;
 use ort::session::builder::GraphOptimizationLevel;
 use ort::session::Session;
@@ -46,32 +47,46 @@ impl InferenceSessionWrapper {
             match &backend {
                 ExecutionBackend::DirectMl { device_id } => {
                     info!("Registering DirectML Execution Provider on Device ID {}", device_id);
-                    let dml = DirectML::default().with_device_id(*device_id as i32);
-                    builder = builder
-                        .with_execution_providers([dml.build()])
-                        .map_err(|e| anyhow::anyhow!("Failed to register DirectML provider: {:?}", e))?;
+                    #[cfg(windows)]
+                    {
+                        let dml = DirectML::default().with_device_id(*device_id as i32);
+                        builder = builder
+                            .with_execution_providers([dml.build()])
+                            .map_err(|e| anyhow::anyhow!("Failed to register DirectML provider: {:?}", e))?;
+                    }
+                    #[cfg(not(windows))]
+                    {
+                        info!("DirectML is native to Windows; using host compute fallback.");
+                    }
                 }
                 ExecutionBackend::CoreMl { use_ane } => {
                     info!("Configuring Apple CoreML Execution Provider (use_ane: {})", use_ane);
-                    #[cfg(target_os = "macos")]
+                    #[cfg(all(target_os = "macos", feature = "coreml"))]
                     {
                         let coreml = ort::ep::CoreML::default();
                         builder = builder
                             .with_execution_providers([coreml.build()])
                             .map_err(|e| anyhow::anyhow!("Failed to register CoreML provider: {:?}", e))?;
                     }
-                    #[cfg(not(target_os = "macos"))]
+                    #[cfg(not(all(target_os = "macos", feature = "coreml")))]
                     {
-                        info!("CoreML is native to Apple Silicon; using host compute provider fallback.");
+                        info!("CoreML is native to Apple Silicon (or feature not active); using host compute provider fallback.");
                     }
                 }
                 ExecutionBackend::Cuda { device_id } => {
                     info!("Registering GPU Execution Provider for CUDA device ID {}", device_id);
                     // On Windows, DirectML can also target NVIDIA GPUs via DirectX 12 Compute
-                    let dml = DirectML::default().with_device_id(*device_id as i32);
-                    builder = builder
-                        .with_execution_providers([dml.build()])
-                        .map_err(|e| anyhow::anyhow!("Failed to register DirectML provider for CUDA device: {:?}", e))?;
+                    #[cfg(windows)]
+                    {
+                        let dml = DirectML::default().with_device_id(*device_id as i32);
+                        builder = builder
+                            .with_execution_providers([dml.build()])
+                            .map_err(|e| anyhow::anyhow!("Failed to register DirectML provider for CUDA device: {:?}", e))?;
+                    }
+                    #[cfg(not(windows))]
+                    {
+                        info!("CUDA / DirectML fallback: using host compute fallback.");
+                    }
                 }
                 ExecutionBackend::Cpu { thread_count } => {
                     info!("Registering CPU Execution Provider with {} threads", thread_count);

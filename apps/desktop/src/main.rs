@@ -111,7 +111,24 @@ fn main() -> anyhow::Result<()> {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    let serve_dir = tower_http::services::ServeDir::new("apps/desktop/ui/dist")
+    let ui_dist_path = if std::path::Path::new("apps/desktop/ui/dist").exists() {
+        std::path::PathBuf::from("apps/desktop/ui/dist")
+    } else if let Ok(exe_path) = std::env::current_exe() {
+        let parent = exe_path.parent().unwrap_or_else(|| std::path::Path::new("."));
+        let win_bundle = parent.join("apps").join("desktop").join("ui").join("dist");
+        let mac_bundle = parent.join("..").join("Resources").join("apps").join("desktop").join("ui").join("dist");
+        if win_bundle.exists() {
+            win_bundle
+        } else if mac_bundle.exists() {
+            mac_bundle
+        } else {
+            std::path::PathBuf::from("apps/desktop/ui/dist")
+        }
+    } else {
+        std::path::PathBuf::from("apps/desktop/ui/dist")
+    };
+
+    let serve_dir = tower_http::services::ServeDir::new(ui_dist_path)
         .append_index_html_on_directories(true);
 
     let app = Router::new()

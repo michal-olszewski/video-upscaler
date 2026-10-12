@@ -29,6 +29,11 @@ jobs:
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Setup FFmpeg
+        uses: FedericoCarboni/setup-ffmpeg@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Run Workspace Tests
         run: cargo test --workspace
 
@@ -71,6 +76,14 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin
+
+      - name: Setup FFmpeg
+        uses: FedericoCarboni/setup-ffmpeg@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run Workspace Tests
+        run: cargo test --workspace
 
       - name: Build Release Binary
         run: cargo build -p desktop --release --target aarch64-apple-darwin
