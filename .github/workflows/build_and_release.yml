@@ -78,9 +78,10 @@ jobs:
           targets: aarch64-apple-darwin
 
       - name: Setup FFmpeg
-        uses: FedericoCarboni/setup-ffmpeg@v3
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! command -v ffmpeg &> /dev/null; then
+            brew install ffmpeg
+          fi
 
       - name: Run Workspace Tests
         run: cargo test --workspace
