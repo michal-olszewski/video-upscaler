@@ -66,6 +66,38 @@ struct RemoveJobRequest {
     job_id: String,
 }
 
+#[derive(Deserialize)]
+struct MultiPreviewRequest {
+    path: String,
+    timestamp_seconds: Option<f64>,
+    model_ids: Vec<String>,
+    device_id: Option<u32>,
+    film_grain: Option<f32>,
+    #[serde(default)]
+    deinterlace_mode: Option<video_io::DeinterlaceMode>,
+    #[serde(default)]
+    denoise_strength: Option<f32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct UserPreset {
+    id: String,
+    name: String,
+    description: Option<String>,
+    settings: serde_json::Value,
+    created_at: String,
+}
+
+#[derive(Deserialize)]
+struct DeletePresetRequest {
+    id: String,
+}
+
+#[derive(Deserialize)]
+struct ImportPresetsRequest {
+    presets: Vec<UserPreset>,
+}
+
 #[derive(Serialize)]
 struct ModelCatalogItem {
     #[serde(flatten)]
@@ -148,6 +180,11 @@ fn main() -> anyhow::Result<()> {
         .route("/api/queue/pause", post(queue_pause))
         .route("/api/probe", post(probe_media))
         .route("/api/preview", post(generate_preview))
+        .route("/api/preview/multi", post(generate_multi_preview))
+        .route("/api/presets", get(get_presets).post(save_preset))
+        .route("/api/presets/delete", post(delete_preset))
+        .route("/api/presets/import", post(import_presets))
+        .route("/api/presets/export", get(export_presets))
         .route("/api/upscale", post(start_upscale))
         .route("/api/status", get(get_status))
         .route("/api/cancel", post(cancel_upscale))
@@ -298,6 +335,119 @@ async fn generate_preview(
             Json(ErrorResponse { error: e.to_string() }),
         )),
     }
+}
+
+async fn generate_multi_preview(
+    Json(payload): Json<MultiPreviewRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let backend = ExecutionBackend::DirectMl {
+        device_id: payload.device_id.unwrap_or(0),
+    };
+    let timestamp = payload.timestamp_seconds.unwrap_or(0.0);
+    let grain = payload.film_grain.unwrap_or(0.1);
+    let deint = payload.deinterlace_mode.unwrap_or(video_io::DeinterlaceMode::Disabled);
+    let denoise = payload.denoise_strength.unwrap_or(0.0);
+
+    match PreviewEngine::generate_multi_preview(
+        &payload.path,
+        timestamp,
+        &payload.model_ids,
+        backend,
+        grain,
+        deint,
+        denoise,
+    ) {
+        Ok(result) => Ok(Json(result)),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse { error: e.to_string() }),
+        )),
+    }
+}
+
+fn get_presets_file_path() -> std::path::PathBuf {
+    std::path::PathBuf::from("user_presets.json")
+}
+
+fn load_user_presets() -> Vec<UserPreset> {
+    let p = get_presets_file_path();
+    if p.exists() {
+        if let Ok(bytes) = std::fs::read(&p) {
+            if let Ok(list) = serde_json::from_slice::<Vec<UserPreset>>(&bytes) {
+                return list;
+            }
+        }
+    }
+    Vec::new()
+}
+
+fn save_user_presets(presets: &[UserPreset]) -> anyhow::Result<()> {
+    let p = get_presets_file_path();
+    let json = serde_json::to_string_pretty(presets)?;
+    std::fs::write(p, json)?;
+    Ok(())
+}
+
+async fn get_presets() -> impl IntoResponse {
+    let list = load_user_presets();
+    Json(list)
+}
+
+async fn save_preset(
+    Json(preset): Json<UserPreset>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let mut list = load_user_presets();
+    if let Some(pos) = list.iter().position(|p| p.id == preset.id) {
+        list[pos] = preset;
+    } else {
+        list.push(preset);
+    }
+    match save_user_presets(&list) {
+        Ok(_) => Ok(Json(list)),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse { error: e.to_string() }),
+        )),
+    }
+}
+
+async fn delete_preset(
+    Json(payload): Json<DeletePresetRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let mut list = load_user_presets();
+    list.retain(|p| p.id != payload.id);
+    match save_user_presets(&list) {
+        Ok(_) => Ok(Json(list)),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse { error: e.to_string() }),
+        )),
+    }
+}
+
+async fn import_presets(
+    Json(payload): Json<ImportPresetsRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let mut list = load_user_presets();
+    for p in payload.presets {
+        if let Some(pos) = list.iter().position(|existing| existing.id == p.id) {
+            list[pos] = p;
+        } else {
+            list.push(p);
+        }
+    }
+    match save_user_presets(&list) {
+        Ok(_) => Ok(Json(list)),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse { error: e.to_string() }),
+        )),
+    }
+}
+
+async fn export_presets() -> impl IntoResponse {
+    let list = load_user_presets();
+    Json(list)
 }
 
 async fn execute_single_job(state: AppState, req: UpscaleJobRequest) {

@@ -23,6 +23,25 @@ pub struct PreviewComparisonResult {
     pub timestamp_seconds: f64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SingleModelPreview {
+    pub model_id: String,
+    pub model_name: String,
+    pub scale_factor: usize,
+    pub out_width: usize,
+    pub out_height: usize,
+    pub upscaled_data_url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MultiModelPreviewResult {
+    pub original_data_url: String,
+    pub in_width: usize,
+    pub in_height: usize,
+    pub timestamp_seconds: f64,
+    pub models: Vec<SingleModelPreview>,
+}
+
 pub struct PreviewEngine;
 
 impl PreviewEngine {
@@ -163,6 +182,145 @@ impl PreviewEngine {
             out_width: out_w,
             out_height: out_h,
             timestamp_seconds,
+        })
+    }
+
+    /// Extracts a single frame once and runs super-resolution inference across multiple models for shootout comparison
+    pub fn generate_multi_preview<P: AsRef<Path>>(
+        video_path: P,
+        timestamp_seconds: f64,
+        model_ids: &[String],
+        backend: ExecutionBackend,
+        film_grain: f32,
+        deinterlace_mode: video_io::DeinterlaceMode,
+        denoise_strength: f32,
+    ) -> Result<MultiModelPreviewResult> {
+        let path = video_path.as_ref();
+        let metadata = MediaProbe::probe_file(path)?;
+
+        let in_w = metadata.video_stream.width;
+        let in_h = metadata.video_stream.height;
+        let frame_bytes = in_w * in_h * 3;
+
+        let ffmpeg_bin = FfmpegLocator::find_ffmpeg()?;
+        let demux_opts = video_io::DemuxOptions {
+            high_bit_depth: false,
+            deinterlace_mode,
+            denoise_strength,
+            start_time: None,
+            end_time: None,
+        };
+        let vf_filter = video_io::build_video_filter(&demux_opts, metadata.video_stream.is_interlaced());
+
+        // Extract raw frame only once
+        let mut cmd = Command::new(&ffmpeg_bin);
+        cmd.args([
+            "-ss",
+            &format!("{:.3}", timestamp_seconds),
+            "-i",
+        ])
+        .arg(path);
+
+        if let Some(ref vf) = vf_filter {
+            cmd.args(["-vf", vf]);
+        }
+
+        cmd.args([
+            "-vframes",
+            "1",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "-v",
+            "error",
+            "-",
+        ]);
+
+        let mut child = cmd
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .with_context(|| format!("Failed to spawn ffmpeg preview extractor on {:?}", path))?;
+
+        let mut stdout = child.stdout.take().context("Failed to capture stdout pipe")?;
+        let mut raw_frame = vec![0u8; frame_bytes];
+        stdout.read_exact(&mut raw_frame).context("Failed to read raw preview frame")?;
+        let _ = child.wait();
+
+        let orig_png = Self::rgb_to_png_base64(&raw_frame, in_w as u32, in_h as u32)?;
+        let in_tensor = ColorPipeline::rgb_bytes_to_nchw(&raw_frame, in_w, in_h);
+
+        let target_models: Vec<String> = if model_ids.is_empty() {
+            vec!["compact-span-x2".to_string()]
+        } else {
+            model_ids.to_vec()
+        };
+
+        let mut models_out = Vec::new();
+
+        for model_id in &target_models {
+            if let Some(model_desc) = ModelRegistry::find_by_id(model_id) {
+                let scale = model_desc.scale_factor as usize;
+                let out_w = in_w * scale;
+                let out_h = in_h * scale;
+
+                let model_path = format!("models/cache/{}", model_desc.filename);
+                if let Ok(session) = InferenceSessionWrapper::new_with_scale(&model_path, backend.clone(), scale) {
+                    let tiling_spec = TileSpec {
+                        tile_size: model_desc.default_tile_size,
+                        padding: model_desc.default_padding,
+                        scale,
+                    };
+                    let tiling_engine = TilingEngine::new(tiling_spec);
+                    let tile_coords = tiling_engine.compute_tiles(in_w, in_h);
+                    let mut tile_outputs = Vec::with_capacity(tile_coords.len());
+
+                    let mut failed = false;
+                    for coord in tile_coords {
+                        let mut tile_in = Array4::<f32>::zeros((1, 3, coord.in_h, coord.in_w));
+                        for y in 0..coord.in_h {
+                            for x in 0..coord.in_w {
+                                for c in 0..3 {
+                                    tile_in[[0, c, y, x]] = in_tensor[[0, c, coord.in_y + y, coord.in_x + x]];
+                                }
+                            }
+                        }
+                        if let Ok(tile_out) = session.run_inference(&tile_in) {
+                            tile_outputs.push((coord, tile_out));
+                        } else {
+                            failed = true;
+                            break;
+                        }
+                    }
+
+                    if !failed {
+                        let mut upscaled = tiling_engine.stitch_tiles(&tile_outputs, out_w, out_h);
+                        if film_grain > 0.0 {
+                            ColorPipeline::apply_film_grain(&mut upscaled, film_grain);
+                        }
+                        let upscaled_bytes = ColorPipeline::nchw_to_rgb_bytes(&upscaled);
+                        if let Ok(upscaled_png) = Self::rgb_to_png_base64(&upscaled_bytes, out_w as u32, out_h as u32) {
+                            models_out.push(SingleModelPreview {
+                                model_id: model_id.clone(),
+                                model_name: model_desc.name.clone(),
+                                scale_factor: scale,
+                                out_width: out_w,
+                                out_height: out_h,
+                                upscaled_data_url: format!("data:image/png;base64,{}", upscaled_png),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(MultiModelPreviewResult {
+            original_data_url: format!("data:image/png;base64,{}", orig_png),
+            in_width: in_w,
+            in_height: in_h,
+            timestamp_seconds,
+            models: models_out,
         })
     }
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 export interface ModelDescriptor {
   id: string;
@@ -40,6 +40,14 @@ export interface UpscaleSettings {
   matteColor: string;
 }
 
+export interface UserCustomPreset {
+  id: string;
+  name: string;
+  description?: string;
+  settings: UpscaleSettings;
+  created_at: string;
+}
+
 interface ModelSettingsProps {
   models: ModelDescriptor[];
   settings: UpscaleSettings;
@@ -59,6 +67,117 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
     downloaded: number;
     total: number;
   } | null>(null);
+
+  // Custom User Presets State
+  const [userPresets, setUserPresets] = useState<UserCustomPreset[]>([]);
+  const [selectedPresetId, setSelectedPresetId] = useState<string>('custom');
+  const [isSavingPreset, setIsSavingPreset] = useState<boolean>(false);
+  const [newPresetName, setNewPresetName] = useState<string>('');
+  const [newPresetDesc, setNewPresetDesc] = useState<string>('');
+
+  const loadUserPresets = async () => {
+    try {
+      const res = await fetch('/api/presets');
+      if (res.ok) {
+        const data = await res.json();
+        setUserPresets(data);
+      }
+    } catch (e) {
+      console.error('Failed to load presets from API, falling back to localStorage:', e);
+      try {
+        const local = localStorage.getItem('user_presets');
+        if (local) setUserPresets(JSON.parse(local));
+      } catch {}
+    }
+  };
+
+  useEffect(() => {
+    loadUserPresets();
+  }, []);
+
+  const handleSavePreset = async () => {
+    if (!newPresetName.trim()) return;
+    const newPreset: UserCustomPreset = {
+      id: `user-${Date.now()}`,
+      name: newPresetName.trim(),
+      description: newPresetDesc.trim() || undefined,
+      settings: { ...settings },
+      created_at: new Date().toISOString(),
+    };
+
+    try {
+      await fetch('/api/presets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newPreset),
+      });
+    } catch (e) {
+      console.error('Failed to save preset to API:', e);
+    }
+
+    const updated = [...userPresets.filter((p) => p.id !== newPreset.id), newPreset];
+    setUserPresets(updated);
+    try {
+      localStorage.setItem('user_presets', JSON.stringify(updated));
+    } catch {}
+
+    setSelectedPresetId(newPreset.id);
+    setIsSavingPreset(false);
+    setNewPresetName('');
+    setNewPresetDesc('');
+  };
+
+  const handleDeletePreset = async () => {
+    if (!selectedPresetId.startsWith('user-')) return;
+    try {
+      await fetch('/api/presets/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: selectedPresetId }),
+      });
+    } catch (e) {
+      console.error(e);
+    }
+
+    const updated = userPresets.filter((p) => p.id !== selectedPresetId);
+    setUserPresets(updated);
+    try {
+      localStorage.setItem('user_presets', JSON.stringify(updated));
+    } catch {}
+    setSelectedPresetId('custom');
+  };
+
+  const handleExportPresets = () => {
+    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(userPresets, null, 2));
+    const a = document.createElement('a');
+    a.href = dataStr;
+    a.download = `video_upscaler_presets_${Date.now()}.json`;
+    a.click();
+  };
+
+  const handleImportPresets = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const imported: UserCustomPreset[] = JSON.parse(event.target?.result as string);
+        if (Array.isArray(imported)) {
+          await fetch('/api/presets/import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ presets: imported }),
+          });
+          const merged = [...userPresets, ...imported.filter((imp) => !userPresets.some((p) => p.id === imp.id))];
+          setUserPresets(merged);
+          localStorage.setItem('user_presets', JSON.stringify(merged));
+        }
+      } catch (err) {
+        alert('Failed to parse presets file');
+      }
+    };
+    reader.readAsText(file);
+  };
 
   const update = <K extends keyof UpscaleSettings>(key: K, value: UpscaleSettings[K]) => {
     onChange({ ...settings, [key]: value });
@@ -217,19 +336,130 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
     <div className="sidebar-section">
       <div className="section-title">Workflow Presets</div>
       <div className="form-group">
-        <label className="form-label">Quick Profile</label>
+        <label className="form-label">Active Profile</label>
         <select
           className="select-input"
           style={{ borderColor: '#3b82f6', background: 'rgba(59, 130, 246, 0.1)' }}
-          onChange={(e) => applyPreset(e.target.value)}
-          defaultValue="custom"
+          value={selectedPresetId}
+          onChange={(e) => {
+            const val = e.target.value;
+            setSelectedPresetId(val);
+            if (val.startsWith('user-')) {
+              const found = userPresets.find((p) => p.id === val);
+              if (found) onChange({ ...found.settings });
+            } else {
+              applyPreset(val);
+            }
+          }}
         >
-          <option value="custom">⚙ Custom Profile</option>
-          <option value="web">⚡ Web & Social (2x Fast, AMF/NVENC, CRF 20, 3-Frame)</option>
-          <option value="cinematic">🎬 Cinematic 4K Master (4x Real-ESRGAN, Grain 15%, CRF 16, 5-Frame)</option>
-          <option value="anime">✨ Anime & Animation (4x Crisp Lines, Low Grain, Fast)</option>
-          <option value="archival">📼 Archival Restoration (2x Compact, Grain 20%, ProRes 422)</option>
+          <optgroup label="Built-in Studio Presets">
+            <option value="custom">⚙ Custom Profile</option>
+            <option value="web">⚡ Web & Social (2x Fast, AMF/NVENC, CRF 20, 3-Frame)</option>
+            <option value="cinematic">🎬 Cinematic 4K Master (4x Real-ESRGAN, Grain 15%, CRF 16, 5-Frame)</option>
+            <option value="anime">✨ Anime & Animation (4x Crisp Lines, Low Grain, Fast)</option>
+            <option value="archival">📼 Archival Restoration (2x Compact, Grain 20%, ProRes 422)</option>
+          </optgroup>
+          {userPresets.length > 0 && (
+            <optgroup label="User Custom Presets">
+              {userPresets.map((p) => (
+                <option key={p.id} value={p.id}>
+                  📁 {p.name}
+                </option>
+              ))}
+            </optgroup>
+          )}
         </select>
+
+        {/* Preset Action Buttons */}
+        <div style={{ display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="btn-secondary"
+            style={{ fontSize: '11px', padding: '3px 8px' }}
+            onClick={() => setIsSavingPreset(!isSavingPreset)}
+          >
+            💾 {isSavingPreset ? 'Cancel' : 'Save As Preset...'}
+          </button>
+
+          {selectedPresetId.startsWith('user-') && (
+            <button
+              type="button"
+              className="btn-secondary"
+              style={{ fontSize: '11px', padding: '3px 8px', color: '#f87171', borderColor: '#ef444444' }}
+              onClick={handleDeletePreset}
+            >
+              🗑 Delete
+            </button>
+          )}
+
+          <button
+            type="button"
+            className="btn-secondary"
+            style={{ fontSize: '11px', padding: '3px 8px' }}
+            onClick={handleExportPresets}
+            title="Export all custom presets as JSON"
+          >
+            📤 Export
+          </button>
+
+          <label
+            className="btn-secondary"
+            style={{ fontSize: '11px', padding: '3px 8px', cursor: 'pointer', margin: 0, display: 'inline-flex', alignItems: 'center' }}
+            title="Import presets from JSON"
+          >
+            📥 Import
+            <input
+              type="file"
+              accept=".json"
+              style={{ display: 'none' }}
+              onChange={handleImportPresets}
+            />
+          </label>
+        </div>
+
+        {/* Inline Save Preset Form */}
+        {isSavingPreset && (
+          <div style={{ background: 'rgba(255, 255, 255, 0.04)', padding: '10px', borderRadius: '6px', marginTop: '8px', border: '1px solid var(--border-color)' }}>
+            <div style={{ fontSize: '12px', fontWeight: 600, color: '#60a5fa', marginBottom: '6px' }}>
+              Save Current Settings as Preset
+            </div>
+            <input
+              type="text"
+              placeholder="Preset Name (e.g. YouTube 4K 60fps)..."
+              className="select-input"
+              style={{ marginBottom: '6px', fontSize: '11px' }}
+              value={newPresetName}
+              onChange={(e) => setNewPresetName(e.target.value)}
+            />
+            <input
+              type="text"
+              placeholder="Optional description..."
+              className="select-input"
+              style={{ marginBottom: '8px', fontSize: '11px' }}
+              value={newPresetDesc}
+              onChange={(e) => setNewPresetDesc(e.target.value)}
+            />
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <button
+                type="button"
+                className="btn-primary"
+                style={{ fontSize: '11px', padding: '4px 10px', width: 'auto' }}
+                disabled={!newPresetName.trim()}
+                onClick={handleSavePreset}
+              >
+                Save Preset
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                style={{ fontSize: '11px', padding: '4px 10px' }}
+                onClick={() => setIsSavingPreset(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="section-title" style={{ marginTop: '16px' }}>Enhancement Model</div>

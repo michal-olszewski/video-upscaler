@@ -1,6 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 
-export type ViewMode = 'curtain' | 'sideBySide' | 'toggle';
+export type ViewMode = 'curtain' | 'sideBySide' | 'toggle' | 'shootout';
+
+export interface ShootoutModelItem {
+  model_id: string;
+  model_name: string;
+  scale_factor: number;
+  out_width: number;
+  out_height: number;
+  upscaled_data_url: string;
+}
 
 interface SplitPlayerProps {
   originalSrc?: string;
@@ -9,6 +18,9 @@ interface SplitPlayerProps {
   upscaledLabel?: string;
   isLoading?: boolean;
   loadingMessage?: string;
+  shootoutModels?: ShootoutModelItem[];
+  onSelectModel?: (modelId: string) => void;
+  onRequestMultiShootout?: () => void;
 }
 
 export const SplitPlayer: React.FC<SplitPlayerProps> = ({
@@ -18,6 +30,9 @@ export const SplitPlayer: React.FC<SplitPlayerProps> = ({
   upscaledLabel = 'Super Scale Output',
   isLoading = false,
   loadingMessage = 'Processing DirectML Super-Resolution...',
+  shootoutModels = [],
+  onSelectModel,
+  onRequestMultiShootout,
 }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('curtain');
   const [isHoldingToggle, setIsHoldingToggle] = useState<boolean>(false);
@@ -241,6 +256,18 @@ export const SplitPlayer: React.FC<SplitPlayerProps> = ({
             >
               <span>⇋</span> A/B Toggle
             </button>
+            <button
+              className={`view-mode-btn ${viewMode === 'shootout' ? 'active' : ''}`}
+              onClick={() => {
+                setViewMode('shootout');
+                if (shootoutModels.length === 0 && onRequestMultiShootout) {
+                  onRequestMultiShootout();
+                }
+              }}
+              title="Multi-Model Shootout Grid (Compare Multiple AI Models)"
+            >
+              <span>田</span> Shootout Grid
+            </button>
           </div>
 
           {/* Zoom and Pan Viewport Canvas */}
@@ -452,6 +479,86 @@ export const SplitPlayer: React.FC<SplitPlayerProps> = ({
                   {isHoldingToggle ? originalLabel : upscaledLabel}
                 </div>
               </>
+            )}
+
+            {viewMode === 'shootout' && shootoutModels.length > 0 && (
+              <div
+                className={`shootout-grid ${
+                  shootoutModels.length <= 2 ? 'shootout-grid-2' : 'shootout-grid-4'
+                }`}
+              >
+                {shootoutModels.map((item) => (
+                  <div key={item.model_id} className="shootout-pane">
+                    <div
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                        transformOrigin: 'center center',
+                        transition: isPanning ? 'none' : 'transform 0.05s ease-out',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <img
+                        src={item.upscaled_data_url}
+                        alt={item.model_name}
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'contain',
+                          pointerEvents: 'none',
+                        }}
+                      />
+                    </div>
+                    <div className="shootout-card-header">
+                      <span className="shootout-model-badge">
+                        {item.model_name} ({item.scale_factor}x — {item.out_width}x{item.out_height})
+                      </span>
+                      {onSelectModel && (
+                        <button
+                          type="button"
+                          className="shootout-select-btn"
+                          onClick={() => onSelectModel(item.model_id)}
+                          title="Select this model for final upscale"
+                        >
+                          Use Model ✓
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {viewMode === 'shootout' && shootoutModels.length === 0 && (
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '12px',
+                  backgroundColor: '#0b0c10',
+                }}
+              >
+                <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                  No multi-model shootout data loaded yet.
+                </div>
+                {onRequestMultiShootout && (
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    style={{ padding: '6px 14px', fontSize: '12px' }}
+                    onClick={onRequestMultiShootout}
+                  >
+                    ⚡ Compare All Models Now
+                  </button>
+                )}
+              </div>
             )}
           </div>
 

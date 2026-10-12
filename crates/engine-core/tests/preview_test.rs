@@ -50,3 +50,56 @@ fn test_single_frame_preview_generation() {
 
     let _ = std::fs::remove_file(test_video);
 }
+
+#[test]
+fn test_multi_model_preview_generation() {
+    let temp_dir = std::env::temp_dir().join("video_upscaler_multi_preview_tests");
+    let _ = std::fs::create_dir_all(&temp_dir);
+    let test_video = temp_dir.join("multi_preview_input.mp4");
+
+    let ffmpeg_bin = FfmpegLocator::find_ffmpeg().expect("FFmpeg must be found");
+
+    // 1. Generate test video
+    let gen_status = std::process::Command::new(&ffmpeg_bin)
+        .args([
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=duration=1:size=160x120:rate=30",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+        ])
+        .arg(&test_video)
+        .output()
+        .expect("Failed to create preview test video");
+
+    assert!(gen_status.status.success());
+
+    // 2. Extract single frame and run shootout across models
+    let multi_preview = PreviewEngine::generate_multi_preview(
+        &test_video,
+        0.0,
+        &["compact-span-x2".to_string()],
+        ExecutionBackend::DirectMl { device_id: 0 },
+        0.05,
+        video_io::DeinterlaceMode::Disabled,
+        0.0,
+    )
+    .expect("Failed to generate multi-model preview");
+
+    assert_eq!(multi_preview.in_width, 160);
+    assert_eq!(multi_preview.in_height, 120);
+    assert!(multi_preview.original_data_url.starts_with("data:image/png;base64,"));
+    assert_eq!(multi_preview.models.len(), 1);
+
+    let first = &multi_preview.models[0];
+    assert_eq!(first.model_id, "compact-span-x2");
+    assert_eq!(first.out_width, 320);
+    assert_eq!(first.out_height, 240);
+    assert!(first.upscaled_data_url.starts_with("data:image/png;base64,"));
+
+    let _ = std::fs::remove_file(test_video);
+}

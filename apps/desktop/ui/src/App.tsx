@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { SplitPlayer } from './components/SplitPlayer';
+import { SplitPlayer, ShootoutModelItem } from './components/SplitPlayer';
 import { DeviceSelector, DeviceInfo } from './components/DeviceSelector';
 import { ModelSettings, ModelDescriptor, UpscaleSettings } from './components/ModelSettings';
 import { BatchQueue, BatchJobItem } from './components/BatchQueue';
@@ -58,6 +58,7 @@ export const App: React.FC = () => {
   
   const [previewTime, setPreviewTime] = useState<number>(0.5);
   const [previewData, setPreviewData] = useState<PreviewComparisonResult | null>(null);
+  const [shootoutModels, setShootoutModels] = useState<ShootoutModelItem[]>([]);
   const [isPreviewLoading, setIsPreviewLoading] = useState<boolean>(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
@@ -307,6 +308,54 @@ export const App: React.FC = () => {
 
       const data: PreviewComparisonResult = await res.json();
       setPreviewData(data);
+    } catch (err: any) {
+      setPreviewError(err.message);
+    } finally {
+      setIsPreviewLoading(false);
+    }
+  };
+
+  const handleGenerateMultiPreview = async () => {
+    if (!inputPath) return;
+    setIsPreviewLoading(true);
+    setPreviewError(null);
+
+    const availableModelIds = models.filter((m) => m.is_cached).map((m) => m.id);
+    const targetIds = availableModelIds.length > 0 ? availableModelIds : [settings.modelId];
+
+    try {
+      const res = await fetch('/api/preview/multi', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          path: inputPath,
+          timestamp_seconds: previewTime,
+          model_ids: targetIds,
+          device_id: selectedDevice,
+          film_grain: settings.filmGrain,
+          deinterlace_mode: settings.deinterlaceMode,
+          denoise_strength: settings.denoiseStrength,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Multi-model shootout failed');
+      }
+
+      const data = await res.json();
+      setShootoutModels(data.models || []);
+      if (data.models && data.models.length > 0) {
+        setPreviewData({
+          original_data_url: data.original_data_url,
+          upscaled_data_url: data.models[0].upscaled_data_url,
+          in_width: data.in_width,
+          in_height: data.in_height,
+          out_width: data.models[0].out_width,
+          out_height: data.models[0].out_height,
+          timestamp_seconds: data.timestamp_seconds,
+        });
+      }
     } catch (err: any) {
       setPreviewError(err.message);
     } finally {
@@ -760,6 +809,9 @@ export const App: React.FC = () => {
                   upscaledLabel={upscaledLabel}
                   isLoading={isPreviewLoading}
                   loadingMessage={`DirectML neural upscaling frame at ${previewTime.toFixed(2)}s...`}
+                  shootoutModels={shootoutModels}
+                  onSelectModel={(id) => setSettings((prev) => ({ ...prev, modelId: id }))}
+                  onRequestMultiShootout={handleGenerateMultiPreview}
                 />
                 {previewError && (
                   <div
@@ -830,14 +882,25 @@ export const App: React.FC = () => {
                     </div>
                   </div>
 
-                  <button
-                    className="btn-secondary"
-                    disabled={isPreviewLoading || !inputPath}
-                    onClick={handleGeneratePreview}
-                    style={{ whiteSpace: 'nowrap' }}
-                  >
-                    {isPreviewLoading ? 'Generating...' : '🔍 Extract Frame Preview'}
-                  </button>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      className="btn-secondary"
+                      disabled={isPreviewLoading || !inputPath}
+                      onClick={handleGeneratePreview}
+                      style={{ whiteSpace: 'nowrap' }}
+                    >
+                      {isPreviewLoading ? 'Generating...' : '🔍 Extract Frame Preview'}
+                    </button>
+                    <button
+                      className="btn-secondary"
+                      disabled={isPreviewLoading || !inputPath}
+                      onClick={handleGenerateMultiPreview}
+                      style={{ whiteSpace: 'nowrap', borderColor: '#38bdf8', color: '#38bdf8' }}
+                      title="Run multi-model shootout comparison across all cached AI models"
+                    >
+                      田 Model Shootout
+                    </button>
+                  </div>
                 </div>
 
                 {/* Lower Row: Frame Stepping, In/Out Trimming Controls & Segment Status */}

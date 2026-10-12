@@ -24,10 +24,12 @@ Powered by a decoupled **Rust engine core**, native hardware **DirectML (DirectX
 * **10-Bit Color & HDR10 Passthrough (DaVinci Resolve Parity)**: Complete high bit depth video pipeline (`yuv420p10le`, `p010le`, `RGB48LE`) preserving BT.2020 color primaries and SMPTE 2084 PQ High Dynamic Range metadata without color clipping or banding.
 * **Next-Gen AV1 & ProRes Mastering**: Hardware AV1 encoding on AMD AMF (`av1_amf`) and NVIDIA NVENC (`av1_nvenc`), SVT-AV1 CPU encoding, and Apple ProRes 422 HQ 10-bit master output.
 * **Interactive In/Out Trim Timeline & Range Export (DaVinci Resolve & Topaz Parity)**: Frame-accurate timeline scrubber with In/Out markers (`I` / `O` shortcuts), sub-clip range highlight, frame-by-frame stepping (`◀ -1f`, `+1f ▶`) and second stepping (`◀ -1s`, `+1s ▶`), container-level fast seeking, and guaranteed 100% audio synchronization for selected clips.
-* **Multi-View Comparison Modes (Topaz Video AI Parity)**: Three synchronized inspection views:
+* **Multi-View Comparison Modes (Topaz Video AI Parity)**: Four synchronized inspection views:
   * **Curtain Split (`◧`)**: Classic interactive before/after divider bar.
   * **Side-by-Side Dual View (`◫`)**: Twin split viewports with synchronized locked 1:1 pan and zoom navigation.
   * **A/B Toggle (`⇋`)**: Single-viewport instant inspection toggling between original and restored frames with press-and-hold Spacebar.
+  * **Multi-Model Shootout Grid (`田`)**: 2-way and 4-way comparison shootout grid comparing multiple AI models (Compact SPAN, Real-ESRGAN, Anime, ClearReality) simultaneously on the exact same source frame with synchronized 1:1 pan and zoom, and 1-click model selection.
+* **Custom Studio Preset Manager & Profile Persistence (Topaz Parity)**: Save customized engine profiles as named user presets with descriptions, persisted to disk and local storage. Features quick preset selection, delete, portable `.json` export and import for team sharing, alongside built-in studio profiles.
 * **Interactive Viewport Canvas Zoom & Pan**: Cursor-centered mouse-wheel zoom ($50\% - 800\%$), click-and-drag pan, quick zoom presets (`Fit`, `100%`, `200%`, `400%`), and a mini-map crop navigator in all comparison views.
 * **Multi-File Batch Queue Manager**: Queue entire directories of videos, configure per-job overrides, start/pause processing, monitor live per-job FPS and ETA counters, and clear completed jobs.
 * **In-App Model Zoo Downloader**: Automatic atomic downloading of production ONNX weights directly from HuggingFace with live byte/percentage progress tracking.
@@ -135,7 +137,7 @@ npm run build
 cd ../../..
 ```
 
-### 2. Run Workspace Test Suite (26 Tests)
+### 2. Run Workspace Test Suite (27 Tests)
 ```bash
 cargo test --workspace
 ```

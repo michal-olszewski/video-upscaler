@@ -648,5 +648,71 @@ body {
   cursor: not-allowed;
 }
 
+/* Multi-Model Shootout Grid View */
+.shootout-grid {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  inset: 0;
+  gap: 1px;
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.shootout-grid-2 {
+  grid-template-columns: 1fr 1fr;
+}
+
+.shootout-grid-4 {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+
+.shootout-pane {
+  position: relative;
+  overflow: hidden;
+  background-color: #0b0c10;
+  width: 100%;
+  height: 100%;
+}
+
+.shootout-card-header {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.shootout-model-badge {
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid var(--border-color);
+  backdrop-filter: blur(4px);
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #38bdf8;
+}
+
+.shootout-select-btn {
+  background: rgba(59, 130, 246, 0.85);
+  border: 1px solid #3b82f6;
+  color: #fff;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.shootout-select-btn:hover {
+  background: #2563eb;
+}
+
+
 
 
