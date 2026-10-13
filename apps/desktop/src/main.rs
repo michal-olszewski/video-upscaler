@@ -401,7 +401,7 @@ async fn get_presets() -> impl IntoResponse {
 
 async fn save_preset(
     Json(preset): Json<UserPreset>,
-) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+) -> impl IntoResponse {
     let mut list = load_user_presets();
     if let Some(pos) = list.iter().position(|p| p.id == preset.id) {
         list[pos] = preset;
@@ -409,31 +409,31 @@ async fn save_preset(
         list.push(preset);
     }
     match save_user_presets(&list) {
-        Ok(_) => Ok(Json(list)),
-        Err(e) => Err((
+        Ok(_) => (StatusCode::OK, Json(serde_json::to_value(list).unwrap())).into_response(),
+        Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse { error: e.to_string() }),
-        )),
+            Json(serde_json::json!({ "error": e.to_string() })),
+        ).into_response(),
     }
 }
 
 async fn delete_preset(
     Json(payload): Json<DeletePresetRequest>,
-) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+) -> impl IntoResponse {
     let mut list = load_user_presets();
     list.retain(|p| p.id != payload.id);
     match save_user_presets(&list) {
-        Ok(_) => Ok(Json(list)),
-        Err(e) => Err((
+        Ok(_) => (StatusCode::OK, Json(serde_json::to_value(list).unwrap())).into_response(),
+        Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse { error: e.to_string() }),
-        )),
+            Json(serde_json::json!({ "error": e.to_string() })),
+        ).into_response(),
     }
 }
 
 async fn import_presets(
     Json(payload): Json<ImportPresetsRequest>,
-) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+) -> impl IntoResponse {
     let mut list = load_user_presets();
     for p in payload.presets {
         if let Some(pos) = list.iter().position(|existing| existing.id == p.id) {
@@ -443,11 +443,11 @@ async fn import_presets(
         }
     }
     match save_user_presets(&list) {
-        Ok(_) => Ok(Json(list)),
-        Err(e) => Err((
+        Ok(_) => (StatusCode::OK, Json(serde_json::to_value(list).unwrap())).into_response(),
+        Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse { error: e.to_string() }),
-        )),
+            Json(serde_json::json!({ "error": e.to_string() })),
+        ).into_response(),
     }
 }
 
@@ -458,16 +458,14 @@ async fn export_presets() -> impl IntoResponse {
 
 async fn run_benchmark(
     payload: Option<Json<BenchmarkRequest>>,
-) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+) -> impl IntoResponse {
     let backend = payload.and_then(|p| p.0.backend);
     match engine_core::BenchmarkEngine::run_system_benchmark(backend).await {
-        Ok(res) => Ok(Json(res)),
-        Err(e) => Err((
+        Ok(res) => (StatusCode::OK, Json(serde_json::to_value(res).unwrap())).into_response(),
+        Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: e.to_string(),
-            }),
-        )),
+            Json(serde_json::json!({ "error": e.to_string() })),
+        ).into_response(),
     }
 }
 
@@ -538,9 +536,9 @@ fn trigger_queue_processing(state: AppState) {
 async fn start_upscale(
     State(state): State<AppState>,
     Json(req): Json<UpscaleJobRequest>,
-) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+) -> impl IntoResponse {
     tokio::spawn(execute_single_job(state, req));
-    Ok(Json(serde_json::json!({ "status": "started" })))
+    Json(serde_json::json!({ "status": "started" }))
 }
 
 
