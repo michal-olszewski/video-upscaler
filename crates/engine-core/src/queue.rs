@@ -178,6 +178,7 @@ mod tests {
             denoise_strength: None,
             trim_start: None,
             trim_end: None,
+            stabilization: None,
             encoding_profile: OutputEncodingProfile::default(),
         }
     }

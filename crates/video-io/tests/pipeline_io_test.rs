@@ -1,7 +1,8 @@
 use video_io::{
     build_video_filter, AudioCodec, AudioEncodingProfile, DeinterlaceMode, DemuxOptions,
     FfmpegLocator, FitMode, HardwareEncoder, MediaProbe, OutputEncodingProfile,
-    TargetGeometryProfile, TargetResolution, VideoCodecType, VideoDemuxer, VideoMuxer,
+    StabilizationBorderMode, StabilizationMode, StabilizationOptions, TargetGeometryProfile,
+    TargetResolution, VideoCodecType, VideoDemuxer, VideoMuxer, VideoStabilizer,
 };
 
 #[test]
@@ -400,5 +401,117 @@ fn test_phase20_target_geometry_and_aspect_ratio_fitting() {
     let _ = std::fs::remove_file(test_output_letterbox);
     let _ = std::fs::remove_file(test_output_crop);
 }
+
+#[test]
+fn test_stabilization_filter_generation() {
+    let dummy_trf = std::path::PathBuf::from("C:\\temp\\motion_transforms.trf");
+    let options = StabilizationOptions {
+        mode: StabilizationMode::SmoothMotion,
+        smoothing: 25,
+        shakiness: 7,
+        accuracy: 10,
+        stepsize: 6,
+        border_mode: StabilizationBorderMode::AutoZoom,
+        zoom_percent: 2.5,
+    };
+
+    let detect = options.build_detect_filter(&dummy_trf);
+    assert!(detect.contains("vidstabdetect"));
+    assert!(detect.contains("shakiness=7"));
+    assert!(detect.contains("accuracy=10"));
+    assert!(detect.contains("motion_transforms.trf"));
+
+    let transform = options.build_transform_filter(&dummy_trf);
+    assert!(transform.contains("vidstabtransform"));
+    assert!(transform.contains("smoothing=25"));
+    assert!(transform.contains("optzoom=1"));
+    assert!(transform.contains("zoom=2.5"));
+
+    // Test Tripod mode filter
+    let tripod_options = StabilizationOptions {
+        mode: StabilizationMode::TripodStatic,
+        smoothing: 0,
+        shakiness: 8,
+        accuracy: 12,
+        stepsize: 4,
+        border_mode: StabilizationBorderMode::Black,
+        zoom_percent: 0.0,
+    };
+    let tripod_detect = tripod_options.build_detect_filter(&dummy_trf);
+    assert!(tripod_detect.contains("tripod=1"));
+    let tripod_transform = tripod_options.build_transform_filter(&dummy_trf);
+    assert!(tripod_transform.contains("tripod=1"));
+    assert!(tripod_transform.contains("crop=black"));
+}
+
+#[test]
+fn test_stabilization_two_pass_execution() {
+    let temp_dir = std::env::temp_dir().join("video_upscaler_stab_tests");
+    let _ = std::fs::create_dir_all(&temp_dir);
+
+    let test_input = temp_dir.join("stab_synthetic_input.mp4");
+    let transforms_trf = temp_dir.join("stab_transforms.trf");
+    let ffmpeg_bin = match FfmpegLocator::find_ffmpeg() {
+        Ok(bin) => bin,
+        Err(_) => return, // Skip test if ffmpeg is not available on environment
+    };
+
+    // Generate 1-second 30fps test video
+    let gen_status = std::process::Command::new(&ffmpeg_bin)
+        .args([
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=duration=1:size=160x120:rate=30",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+        ])
+        .arg(&test_input)
+        .output();
+
+    if gen_status.is_err() || !gen_status.as_ref().unwrap().status.success() {
+        return;
+    }
+
+    let stab_options = StabilizationOptions {
+        mode: StabilizationMode::SmoothMotion,
+        smoothing: 15,
+        shakiness: 5,
+        accuracy: 8,
+        stepsize: 6,
+        border_mode: StabilizationBorderMode::AutoZoom,
+        zoom_percent: 0.0,
+    };
+
+    // Pass 1: analyze motion
+    let analyze_res = VideoStabilizer::analyze_motion(&test_input, &transforms_trf, &stab_options, None, None);
+    assert!(analyze_res.is_ok(), "Motion analysis failed: {:?}", analyze_res.err());
+    assert!(transforms_trf.exists(), "Transforms file must exist");
+
+    // Pass 2: Demux frames with stabilization transform filter
+    let demux_opts = DemuxOptions {
+        stabilization: Some(stab_options),
+        stabilization_transforms_path: Some(transforms_trf.clone()),
+        ..Default::default()
+    };
+
+    let demux_res = VideoDemuxer::open_with_options(&test_input, demux_opts);
+    assert!(demux_res.is_ok(), "Failed to open demuxer with stabilization: {:?}", demux_res.err());
+    let mut demuxer = demux_res.unwrap();
+
+    let mut frame_count = 0;
+    while let Ok(Some(frame)) = demuxer.read_frame() {
+        assert_eq!(frame.len(), 160 * 120 * 3);
+        frame_count += 1;
+    }
+    assert_eq!(frame_count, 30, "Expected 30 stabilized frames");
+
+    let _ = std::fs::remove_file(test_input);
+    let _ = std::fs::remove_file(transforms_trf);
+}
+
 
 

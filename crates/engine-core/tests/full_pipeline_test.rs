@@ -54,6 +54,7 @@ async fn test_full_video_upscale_pipeline() {
         denoise_strength: None,
         trim_start: None,
         trim_end: None,
+        stabilization: None,
         encoding_profile: OutputEncodingProfile::default(),
     };
 
@@ -151,6 +152,7 @@ async fn test_full_10bit_hdr10_upscale_pipeline() {
         denoise_strength: None,
         trim_start: None,
         trim_end: None,
+        stabilization: None,
         encoding_profile: hdr_profile,
     };
 
@@ -237,6 +239,7 @@ async fn test_motion_interpolation_pipeline() {
         denoise_strength: None,
         trim_start: None,
         trim_end: None,
+        stabilization: None,
         encoding_profile: OutputEncodingProfile::default(),
     };
 
@@ -326,6 +329,7 @@ async fn test_deinterlace_and_denoise_upscale_pipeline() {
         denoise_strength: Some(0.35),
         trim_start: None,
         trim_end: None,
+        stabilization: None,
         encoding_profile: OutputEncodingProfile::default(),
     };
 
@@ -410,6 +414,7 @@ async fn test_trimmed_range_upscale_pipeline() {
         denoise_strength: None,
         trim_start: Some(0.2),
         trim_end: Some(0.6),
+        stabilization: None,
         encoding_profile: OutputEncodingProfile::default(),
     };
 

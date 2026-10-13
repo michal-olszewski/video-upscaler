@@ -98,6 +98,11 @@ struct ImportPresetsRequest {
     presets: Vec<UserPreset>,
 }
 
+#[derive(Deserialize)]
+struct BenchmarkRequest {
+    backend: Option<ExecutionBackend>,
+}
+
 #[derive(Serialize)]
 struct ModelCatalogItem {
     #[serde(flatten)]
@@ -185,6 +190,7 @@ fn main() -> anyhow::Result<()> {
         .route("/api/presets/delete", post(delete_preset))
         .route("/api/presets/import", post(import_presets))
         .route("/api/presets/export", get(export_presets))
+        .route("/api/benchmark/run", post(run_benchmark))
         .route("/api/upscale", post(start_upscale))
         .route("/api/status", get(get_status))
         .route("/api/cancel", post(cancel_upscale))
@@ -448,6 +454,21 @@ async fn import_presets(
 async fn export_presets() -> impl IntoResponse {
     let list = load_user_presets();
     Json(list)
+}
+
+async fn run_benchmark(
+    payload: Option<Json<BenchmarkRequest>>,
+) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    let backend = payload.and_then(|p| p.0.backend);
+    match engine_core::BenchmarkEngine::run_system_benchmark(backend).await {
+        Ok(res) => Ok(Json(res)),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
+        )),
+    }
 }
 
 async fn execute_single_job(state: AppState, req: UpscaleJobRequest) {

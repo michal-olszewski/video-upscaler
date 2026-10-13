@@ -3,6 +3,7 @@ import { SplitPlayer, ShootoutModelItem } from './components/SplitPlayer';
 import { DeviceSelector, DeviceInfo } from './components/DeviceSelector';
 import { ModelSettings, ModelDescriptor, UpscaleSettings } from './components/ModelSettings';
 import { BatchQueue, BatchJobItem } from './components/BatchQueue';
+import { BenchmarkModal } from './components/BenchmarkModal';
 
 interface VideoStreamInfo {
   width: number;
@@ -71,6 +72,7 @@ export const App: React.FC = () => {
   // Batch queue state
   const [queueJobs, setQueueJobs] = useState<BatchJobItem[]>([]);
   const [isQueueActive, setIsQueueActive] = useState<boolean>(false);
+  const [isBenchmarkOpen, setIsBenchmarkOpen] = useState<boolean>(false);
 
   const stepTime = (delta: number) => {
     const maxDur = metadata ? metadata.duration_seconds : 1000;
@@ -159,6 +161,11 @@ export const App: React.FC = () => {
     targetResolution: 'NativeScale',
     fitMode: 'Letterbox',
     matteColor: 'black',
+    enableStabilization: false,
+    stabilizationMode: 'SmoothMotion',
+    stabilizationSmoothing: 30,
+    stabilizationShakiness: 6,
+    stabilizationBorderMode: 'AutoZoom',
   });
 
   const loadModels = () => {
@@ -492,6 +499,17 @@ export const App: React.FC = () => {
       encoding_profile: buildEncodingProfile(),
       trim_start: trimStart,
       trim_end: trimEnd,
+      stabilization: settings.enableStabilization
+        ? {
+            mode: settings.stabilizationMode || 'SmoothMotion',
+            smoothing: settings.stabilizationSmoothing ?? 30,
+            shakiness: settings.stabilizationShakiness ?? 6,
+            accuracy: 9,
+            stepsize: 6,
+            border_mode: settings.stabilizationBorderMode || 'AutoZoom',
+            zoom_percent: 0.0,
+          }
+        : null,
     };
 
     try {
@@ -540,6 +558,17 @@ export const App: React.FC = () => {
       encoding_profile: buildEncodingProfile(),
       trim_start: trimStart,
       trim_end: trimEnd,
+      stabilization: settings.enableStabilization
+        ? {
+            mode: settings.stabilizationMode || 'SmoothMotion',
+            smoothing: settings.stabilizationSmoothing ?? 30,
+            shakiness: settings.stabilizationShakiness ?? 6,
+            accuracy: 9,
+            stepsize: 6,
+            border_mode: settings.stabilizationBorderMode || 'AutoZoom',
+            zoom_percent: 0.0,
+          }
+        : null,
     };
 
     try {
@@ -663,9 +692,29 @@ export const App: React.FC = () => {
           <span>⚡ VIDEO UPSCALER STUDIO</span>
           <span className="badge">PRO</span>
         </div>
-        <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-          Active Engine:{' '}
-          <strong style={{ color: '#60a5fa' }}>{activeDeviceName} (DirectX 12 Compute)</strong>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+            Active Engine:{' '}
+            <strong style={{ color: '#60a5fa' }}>{activeDeviceName} (DirectX 12 Compute)</strong>
+          </div>
+          <button
+            type="button"
+            className="btn-secondary"
+            style={{
+              fontSize: '12px',
+              padding: '4px 10px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: 'rgba(56, 189, 248, 0.1)',
+              borderColor: 'rgba(56, 189, 248, 0.3)',
+              color: '#38bdf8',
+              fontWeight: 600,
+            }}
+            onClick={() => setIsBenchmarkOpen(true)}
+          >
+            <span>⚡</span> Benchmark System
+          </button>
         </div>
       </header>
 
@@ -1141,6 +1190,14 @@ export const App: React.FC = () => {
           </div>
         </aside>
       </div>
+
+      <BenchmarkModal
+        isOpen={isBenchmarkOpen}
+        onClose={() => setIsBenchmarkOpen(false)}
+        onApplyRecommendation={(recTileSize) => {
+          setSettings((prev) => ({ ...prev, tileSize: recTileSize }));
+        }}
+      />
     </>
   );
 };

@@ -38,6 +38,8 @@ pub struct UpscaleJobRequest {
     pub trim_start: Option<f64>,
     #[serde(default)]
     pub trim_end: Option<f64>,
+    #[serde(default)]
+    pub stabilization: Option<video_io::StabilizationOptions>,
     pub encoding_profile: OutputEncodingProfile,
 }
 

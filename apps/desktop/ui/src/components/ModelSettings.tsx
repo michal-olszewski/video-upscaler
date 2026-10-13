@@ -38,6 +38,12 @@ export interface UpscaleSettings {
   customHeight?: number;
   fitMode: 'Letterbox' | 'CenterCrop' | 'Stretch';
   matteColor: string;
+  // Phase 23: AI Camera Motion Stabilization & Gyro
+  enableStabilization?: boolean;
+  stabilizationMode?: 'Disabled' | 'SmoothMotion' | 'TripodStatic';
+  stabilizationSmoothing?: number;
+  stabilizationShakiness?: number;
+  stabilizationBorderMode?: 'AutoZoom' | 'Mirror' | 'Black';
 }
 
 export interface UserCustomPreset {
@@ -891,6 +897,92 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
           )}
         </div>
       )}
+
+      {/* Phase 23: AI Camera Motion Stabilization & Gyro Smoothing */}
+      <div className="settings-section-divider" style={{ margin: '16px 0 12px 0', borderTop: '1px solid rgba(255,255,255,0.08)' }} />
+      <div className="form-group" style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '12px', borderRadius: '6px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+          <div>
+            <label className="form-label" style={{ margin: 0, fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>🎥</span> AI Camera Motion Stabilization & Gyro
+            </label>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+              Eliminates handheld jitter and smooths erratic motion vectors (Topaz Theia / DaVinci Gyro parity).
+            </div>
+          </div>
+          <input
+            type="checkbox"
+            checked={!!settings.enableStabilization}
+            onChange={(e) => update('enableStabilization', e.target.checked)}
+            style={{ cursor: 'pointer', transform: 'scale(1.2)' }}
+          />
+        </div>
+
+        {settings.enableStabilization && (
+          <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <div>
+              <label className="form-label" style={{ fontSize: '11px' }}>Stabilization Tracking Mode</label>
+              <select
+                className="select-input"
+                value={settings.stabilizationMode || 'SmoothMotion'}
+                onChange={(e) => update('stabilizationMode', e.target.value as any)}
+              >
+                <option value="SmoothMotion">Smooth Motion (Handheld / Filter Jitter, Keep Panning)</option>
+                <option value="TripodStatic">Tripod Lock (Rigid Virtual Tripod / Zero Translation)</option>
+              </select>
+            </div>
+
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Smoothing Radius</span>
+                <span className="slider-value" style={{ color: '#38bdf8', fontSize: '11px', fontWeight: 600 }}>
+                  {settings.stabilizationSmoothing ?? 30} frames
+                </span>
+              </div>
+              <input
+                type="range"
+                min="5"
+                max="60"
+                step="1"
+                className="range-slider"
+                value={settings.stabilizationSmoothing ?? 30}
+                onChange={(e) => update('stabilizationSmoothing', parseInt(e.target.value))}
+              />
+            </div>
+
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Shake Sensitivity</span>
+                <span className="slider-value" style={{ color: '#38bdf8', fontSize: '11px', fontWeight: 600 }}>
+                  {settings.stabilizationShakiness ?? 6} / 10
+                </span>
+              </div>
+              <input
+                type="range"
+                min="1"
+                max="10"
+                step="1"
+                className="range-slider"
+                value={settings.stabilizationShakiness ?? 6}
+                onChange={(e) => update('stabilizationShakiness', parseInt(e.target.value))}
+              />
+            </div>
+
+            <div>
+              <label className="form-label" style={{ fontSize: '11px' }}>Border Compensation & Cropping</label>
+              <select
+                className="select-input"
+                value={settings.stabilizationBorderMode || 'AutoZoom'}
+                onChange={(e) => update('stabilizationBorderMode', e.target.value as any)}
+              >
+                <option value="AutoZoom">Adaptive Auto-Zoom (Eliminate Black Border Panning)</option>
+                <option value="Mirror">Mirror Edges (Fill Borders with Reflected Pixels)</option>
+                <option value="Black">Original / Black Letterbox (Show Raw Stabilized Shift)</option>
+              </select>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

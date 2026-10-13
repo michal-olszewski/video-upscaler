@@ -156,6 +156,8 @@ impl UpscalePipeline {
             denoise_strength,
             start_time: trim_start,
             end_time: trim_end,
+            stabilization: request.stabilization,
+            stabilization_transforms_path: None,
         };
 
         let decode_task = tokio::task::spawn_blocking(move || -> Result<u64> {

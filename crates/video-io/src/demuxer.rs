@@ -29,6 +29,10 @@ pub struct DemuxOptions {
     pub denoise_strength: f32, // 0.0 = disabled, 0.0..=1.0
     pub start_time: Option<f64>,
     pub end_time: Option<f64>,
+    #[serde(default)]
+    pub stabilization: Option<crate::stabilizer::StabilizationOptions>,
+    #[serde(default)]
+    pub stabilization_transforms_path: Option<std::path::PathBuf>,
 }
 
 impl Default for DemuxOptions {
@@ -39,6 +43,8 @@ impl Default for DemuxOptions {
             denoise_strength: 0.0,
             start_time: None,
             end_time: None,
+            stabilization: None,
+            stabilization_transforms_path: None,
         }
     }
 }
@@ -72,6 +78,14 @@ pub fn build_video_filter(options: &DemuxOptions, is_stream_interlaced: bool) ->
         let lt = (s * 12.0).max(1.0);
         let ct = (s * 9.0).max(1.0);
         filters.push(format!("hqdn3d={:.1}:{:.1}:{:.1}:{:.1}", ls, cs, lt, ct));
+    }
+
+    if let Some(ref stab) = options.stabilization {
+        if stab.is_enabled() {
+            if let Some(ref trf_path) = options.stabilization_transforms_path {
+                filters.push(stab.build_transform_filter(trf_path));
+            }
+        }
     }
 
     if filters.is_empty() {
@@ -115,10 +129,23 @@ impl VideoDemuxer {
         Self::open_internal(path, metadata, options)
     }
 
-    /// Spawns an FFmpeg decode process with complete demux options (deinterlace, denoise, bit depth)
-    pub fn open_with_options<P: AsRef<Path>>(input_path: P, options: DemuxOptions) -> Result<Self> {
+    /// Spawns an FFmpeg decode process with complete demux options (deinterlace, denoise, bit depth, stabilization)
+    pub fn open_with_options<P: AsRef<Path>>(input_path: P, mut options: DemuxOptions) -> Result<Self> {
         let path = input_path.as_ref().to_path_buf();
         let metadata = MediaProbe::probe_file(&path)?;
+
+        if let Some(ref stab) = options.stabilization {
+            if stab.is_enabled() && options.stabilization_transforms_path.is_none() {
+                let trf = crate::stabilizer::VideoStabilizer::get_or_generate_transforms(
+                    &path,
+                    stab,
+                    options.start_time,
+                    options.end_time,
+                )?;
+                options.stabilization_transforms_path = Some(trf);
+            }
+        }
+
         Self::open_internal(path, metadata, options)
     }
 

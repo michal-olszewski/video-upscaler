@@ -88,6 +88,8 @@ impl PreviewEngine {
             denoise_strength,
             start_time: None,
             end_time: None,
+            stabilization: None,
+            stabilization_transforms_path: None,
         };
         let vf_filter = video_io::build_video_filter(&demux_opts, metadata.video_stream.is_interlaced());
 
@@ -209,6 +211,8 @@ impl PreviewEngine {
             denoise_strength,
             start_time: None,
             end_time: None,
+            stabilization: None,
+            stabilization_transforms_path: None,
         };
         let vf_filter = video_io::build_video_filter(&demux_opts, metadata.video_stream.is_interlaced());
 
