@@ -92,8 +92,31 @@ jobs:
           mkdir -p "dist/Video Upscaler.app/Contents/Resources/apps/desktop/ui"
           cp "target/aarch64-apple-darwin/release/video-upscaler" "dist/Video Upscaler.app/Contents/MacOS/Video Upscaler"
           cp -r "apps/desktop/ui/dist" "dist/Video Upscaler.app/Contents/Resources/apps/desktop/ui/dist"
+          cp "apps/desktop/resources/Info.plist" "dist/Video Upscaler.app/Contents/Info.plist"
+          printf "APPL????" > "dist/Video Upscaler.app/Contents/PkgInfo"
           chmod +x "dist/Video Upscaler.app/Contents/MacOS/Video Upscaler"
-          cd dist && zip -r "VideoUpscaler-macOS-AppleSilicon.zip" "Video Upscaler.app"
+
+          # Generate native .icns icon from source icon
+          if [ -f "apps/desktop/icons/icon.png" ]; then
+            mkdir -p icon.iconset
+            sips -z 16 16     apps/desktop/icons/icon.png --out icon.iconset/icon_16x16.png
+            sips -z 32 32     apps/desktop/icons/icon.png --out icon.iconset/icon_16x16@2x.png
+            sips -z 32 32     apps/desktop/icons/icon.png --out icon.iconset/icon_32x32.png
+            sips -z 64 64     apps/desktop/icons/icon.png --out icon.iconset/icon_32x32@2x.png
+            sips -z 128 128   apps/desktop/icons/icon.png --out icon.iconset/icon_128x128.png
+            sips -z 256 256   apps/desktop/icons/icon.png --out icon.iconset/icon_128x128@2x.png
+            sips -z 256 256   apps/desktop/icons/icon.png --out icon.iconset/icon_256x256.png
+            sips -z 512 512   apps/desktop/icons/icon.png --out icon.iconset/icon_256x256@2x.png
+            sips -z 512 512   apps/desktop/icons/icon.png --out icon.iconset/icon_512x512.png
+            iconutil -c icns icon.iconset -o "dist/Video Upscaler.app/Contents/Resources/AppIcon.icns"
+            rm -rf icon.iconset
+          fi
+
+          # Ad-hoc codesign the application bundle for Apple Silicon
+          codesign --force --deep --sign - "dist/Video Upscaler.app"
+
+          # Package cleanly with ditto to preserve bundle metadata, permissions, and signatures
+          ditto -c -k --sequesterRsrc --keepParent "dist/Video Upscaler.app" "dist/VideoUpscaler-macOS-AppleSilicon.zip"
 
       - name: Upload macOS Artifact
         uses: actions/upload-artifact@v4

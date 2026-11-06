@@ -124,7 +124,26 @@ video-upscaler/
 
 ---
 
-## 🛠️ Building & Running
+## 📥 Running Standalone Releases
+
+Pre-compiled standalone bundles for Windows and macOS Apple Silicon are automatically built and published on every release via GitHub Actions.
+
+### Windows (x86_64)
+Extract `VideoUpscaler-Windows-x64.zip` and run `Video Upscaler.exe`.
+
+### macOS (Apple Silicon M1/M2/M3/M4)
+1. Extract `VideoUpscaler-macOS-AppleSilicon.zip` and move `Video Upscaler.app` to `/Applications` (or your preferred folder).
+2. Because open-source builds distributed via GitHub are not signed with a paid Apple Developer ID certificate, macOS Gatekeeper attaches a quarantine flag by default and may display:
+   > *"Video Upscaler" is damaged and can't be opened. You should move it to the Bin.*
+3. To clear the Gatekeeper quarantine attribute, open Terminal and run:
+   ```bash
+   xattr -cr "/Applications/Video Upscaler.app"
+   ```
+4. Double-click `Video Upscaler.app` in Finder to launch.
+
+---
+
+## 🛠️ Building From Source
 
 ### Prerequisites
 * **Rust**: `1.80+` ([rustup.rs](https://rustup.rs/))
