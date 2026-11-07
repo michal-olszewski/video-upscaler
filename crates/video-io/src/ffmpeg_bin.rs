@@ -13,6 +13,11 @@ impl FfmpegLocator {
             }
         }
 
+        // Check alongside current executable (bundle or portable directory)
+        if let Some(p) = Self::find_alongside_exe("ffmpeg") {
+            return Ok(p);
+        }
+
         // Try direct command resolution
         if let Ok(output) = std::process::Command::new("ffmpeg").arg("-version").output() {
             if output.status.success() {
@@ -25,11 +30,10 @@ impl FfmpegLocator {
             if let Some(p) = Self::find_windows_winget_binary("ffmpeg.exe") {
                 return Ok(p);
             }
-        }
-
-        #[cfg(target_os = "macos")]
-        {
-            for candidate in &["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"] {
+            for candidate in &[
+                "C:\\ffmpeg\\bin\\ffmpeg.exe",
+                "C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe",
+            ] {
                 let p = PathBuf::from(candidate);
                 if p.exists() {
                     return Ok(p);
@@ -37,7 +41,34 @@ impl FfmpegLocator {
             }
         }
 
-        anyhow::bail!("ffmpeg executable not found. Please ensure FFmpeg is installed or set FFMPEG_PATH.")
+        #[cfg(target_os = "macos")]
+        {
+            let home = std::env::var("HOME").unwrap_or_default();
+            let mut candidates = vec![
+                "/opt/homebrew/bin/ffmpeg".to_string(),
+                "/usr/local/bin/ffmpeg".to_string(),
+                "/opt/local/bin/ffmpeg".to_string(),
+                "/usr/bin/ffmpeg".to_string(),
+            ];
+            if !home.is_empty() {
+                candidates.push(format!("{}/.local/bin/ffmpeg", home));
+                candidates.push(format!("{}/bin/ffmpeg", home));
+            }
+            for candidate in candidates {
+                let p = PathBuf::from(candidate);
+                if p.exists() {
+                    return Ok(p);
+                }
+            }
+        }
+
+        #[cfg(target_os = "macos")]
+        anyhow::bail!(
+            "ffmpeg executable not found. Please install FFmpeg on your Mac using Homebrew in Terminal: 'brew install ffmpeg', or set the FFMPEG_PATH environment variable."
+        );
+
+        #[cfg(not(target_os = "macos"))]
+        anyhow::bail!("ffmpeg executable not found. Please ensure FFmpeg is installed or set FFMPEG_PATH.");
     }
 
     /// Discovers the path to the ffprobe executable on the system
@@ -47,6 +78,11 @@ impl FfmpegLocator {
             if p.exists() {
                 return Ok(p);
             }
+        }
+
+        // Check alongside current executable (bundle or portable directory)
+        if let Some(p) = Self::find_alongside_exe("ffprobe") {
+            return Ok(p);
         }
 
         // Try direct command resolution
@@ -61,11 +97,10 @@ impl FfmpegLocator {
             if let Some(p) = Self::find_windows_winget_binary("ffprobe.exe") {
                 return Ok(p);
             }
-        }
-
-        #[cfg(target_os = "macos")]
-        {
-            for candidate in &["/opt/homebrew/bin/ffprobe", "/usr/local/bin/ffprobe", "/usr/bin/ffprobe"] {
+            for candidate in &[
+                "C:\\ffmpeg\\bin\\ffprobe.exe",
+                "C:\\Program Files\\ffmpeg\\bin\\ffprobe.exe",
+            ] {
                 let p = PathBuf::from(candidate);
                 if p.exists() {
                     return Ok(p);
@@ -73,7 +108,59 @@ impl FfmpegLocator {
             }
         }
 
-        anyhow::bail!("ffprobe executable not found. Please ensure FFprobe is installed or set FFPROBE_PATH.")
+        #[cfg(target_os = "macos")]
+        {
+            let home = std::env::var("HOME").unwrap_or_default();
+            let mut candidates = vec![
+                "/opt/homebrew/bin/ffprobe".to_string(),
+                "/usr/local/bin/ffprobe".to_string(),
+                "/opt/local/bin/ffprobe".to_string(),
+                "/usr/bin/ffprobe".to_string(),
+            ];
+            if !home.is_empty() {
+                candidates.push(format!("{}/.local/bin/ffprobe", home));
+                candidates.push(format!("{}/bin/ffprobe", home));
+            }
+            for candidate in candidates {
+                let p = PathBuf::from(candidate);
+                if p.exists() {
+                    return Ok(p);
+                }
+            }
+        }
+
+        #[cfg(target_os = "macos")]
+        anyhow::bail!(
+            "ffprobe executable not found. Please install FFmpeg on your Mac using Homebrew in Terminal: 'brew install ffmpeg', or set the FFPROBE_PATH environment variable."
+        );
+
+        #[cfg(not(target_os = "macos"))]
+        anyhow::bail!("ffprobe executable not found. Please ensure FFprobe is installed or set FFPROBE_PATH.");
+    }
+
+    /// Checks for a binary alongside the current executable or inside the app bundle
+    fn find_alongside_exe(bin_stem: &str) -> Option<PathBuf> {
+        let exe = std::env::current_exe().ok()?;
+        let exe_dir = exe.parent()?;
+
+        let candidates = [
+            // Exact name in same directory (e.g. Contents/MacOS/ffprobe or ./ffprobe)
+            exe_dir.join(bin_stem),
+            exe_dir.join(format!("{}.exe", bin_stem)),
+            // In a bin/ subdirectory
+            exe_dir.join("bin").join(bin_stem),
+            exe_dir.join("bin").join(format!("{}.exe", bin_stem)),
+            // macOS App Bundle Resources (e.g. Contents/Resources/bin/ffprobe or Contents/Resources/ffprobe)
+            exe_dir.join("../Resources").join(bin_stem),
+            exe_dir.join("../Resources/bin").join(bin_stem),
+        ];
+
+        for c in candidates {
+            if c.exists() {
+                return Some(c);
+            }
+        }
+        None
     }
 
     #[cfg(target_os = "windows")]
