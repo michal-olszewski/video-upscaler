@@ -148,7 +148,7 @@ Extract `VideoUpscaler-Windows-x64.zip` and run `Video Upscaler.exe`.
 ### Prerequisites
 * **Rust**: `1.80+` ([rustup.rs](https://rustup.rs/))
 * **Node.js**: `v20+` ([nodejs.org](https://nodejs.org/))
-* **FFmpeg**: Installed and available in PATH (e.g. via `winget install Gyan.FFmpeg` on Windows or `brew install ffmpeg` on macOS)
+* **FFmpeg**: Installed and available in PATH (e.g. via `winget install Gyan.FFmpeg` on Windows, or on macOS via MacPorts `sudo port install ffmpeg` or Homebrew `brew install ffmpeg`)
 
 ### 1. Build the Frontend UI
 ```bash

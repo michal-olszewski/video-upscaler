@@ -45,14 +45,18 @@ impl FfmpegLocator {
         {
             let home = std::env::var("HOME").unwrap_or_default();
             let mut candidates = vec![
+                // MacPorts (standard prefix /opt/local)
+                "/opt/local/bin/ffmpeg".to_string(),
+                "/opt/local/sbin/ffmpeg".to_string(),
+                // Homebrew (Apple Silicon & Intel)
                 "/opt/homebrew/bin/ffmpeg".to_string(),
                 "/usr/local/bin/ffmpeg".to_string(),
-                "/opt/local/bin/ffmpeg".to_string(),
                 "/usr/bin/ffmpeg".to_string(),
             ];
             if !home.is_empty() {
                 candidates.push(format!("{}/.local/bin/ffmpeg", home));
                 candidates.push(format!("{}/bin/ffmpeg", home));
+                candidates.push(format!("{}/macports/bin/ffmpeg", home));
             }
             for candidate in candidates {
                 let p = PathBuf::from(candidate);
@@ -60,11 +64,16 @@ impl FfmpegLocator {
                     return Ok(p);
                 }
             }
+
+            // Fallback: Query the user's login shell to pick up custom MacPorts or shell profiles
+            if let Some(p) = Self::find_via_login_shell("ffmpeg") {
+                return Ok(p);
+            }
         }
 
         #[cfg(target_os = "macos")]
         anyhow::bail!(
-            "ffmpeg executable not found. Please install FFmpeg on your Mac using Homebrew in Terminal: 'brew install ffmpeg', or set the FFMPEG_PATH environment variable."
+            "ffmpeg executable not found. Please install FFmpeg using MacPorts ('sudo port install ffmpeg') or Homebrew ('brew install ffmpeg'), or set the FFMPEG_PATH environment variable."
         );
 
         #[cfg(not(target_os = "macos"))]
@@ -112,14 +121,18 @@ impl FfmpegLocator {
         {
             let home = std::env::var("HOME").unwrap_or_default();
             let mut candidates = vec![
+                // MacPorts (standard prefix /opt/local)
+                "/opt/local/bin/ffprobe".to_string(),
+                "/opt/local/sbin/ffprobe".to_string(),
+                // Homebrew (Apple Silicon & Intel)
                 "/opt/homebrew/bin/ffprobe".to_string(),
                 "/usr/local/bin/ffprobe".to_string(),
-                "/opt/local/bin/ffprobe".to_string(),
                 "/usr/bin/ffprobe".to_string(),
             ];
             if !home.is_empty() {
                 candidates.push(format!("{}/.local/bin/ffprobe", home));
                 candidates.push(format!("{}/bin/ffprobe", home));
+                candidates.push(format!("{}/macports/bin/ffprobe", home));
             }
             for candidate in candidates {
                 let p = PathBuf::from(candidate);
@@ -127,11 +140,16 @@ impl FfmpegLocator {
                     return Ok(p);
                 }
             }
+
+            // Fallback: Query the user's login shell to pick up custom MacPorts or shell profiles
+            if let Some(p) = Self::find_via_login_shell("ffprobe") {
+                return Ok(p);
+            }
         }
 
         #[cfg(target_os = "macos")]
         anyhow::bail!(
-            "ffprobe executable not found. Please install FFmpeg on your Mac using Homebrew in Terminal: 'brew install ffmpeg', or set the FFPROBE_PATH environment variable."
+            "ffprobe executable not found. Please install FFmpeg using MacPorts ('sudo port install ffmpeg') or Homebrew ('brew install ffmpeg'), or set the FFPROBE_PATH environment variable."
         );
 
         #[cfg(not(target_os = "macos"))]
@@ -158,6 +176,28 @@ impl FfmpegLocator {
         for c in candidates {
             if c.exists() {
                 return Some(c);
+            }
+        }
+        None
+    }
+
+    #[cfg(target_os = "macos")]
+    fn find_via_login_shell(bin_name: &str) -> Option<PathBuf> {
+        // When launched via GUI (Finder/LaunchServices), PATH is restricted to /usr/bin:/bin.
+        // Querying the user's login shell loads ~/.zprofile, ~/.zshrc where MacPorts, Homebrew,
+        // or custom toolchains are registered in PATH.
+        if let Ok(output) = std::process::Command::new("/bin/zsh")
+            .args(["-l", "-c", &format!("which {}", bin_name)])
+            .output()
+        {
+            if output.status.success() {
+                let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !path_str.is_empty() {
+                    let p = PathBuf::from(path_str);
+                    if p.exists() {
+                        return Some(p);
+                    }
+                }
             }
         }
         None

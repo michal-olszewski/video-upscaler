@@ -127,6 +127,28 @@ fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     let is_headless = args.iter().any(|a| a == "--headless" || a == "--server-only");
 
+    #[cfg(target_os = "macos")]
+    {
+        // When launched via Finder/LaunchServices, macOS GUI apps do not inherit user shell PATH.
+        // Inject MacPorts (/opt/local/bin) and Homebrew prefixes so child processes (ffmpeg/ffprobe) resolve cleanly.
+        let current_path = std::env::var("PATH").unwrap_or_default();
+        let mac_extra_paths = [
+            "/opt/local/bin",
+            "/opt/local/sbin",
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+        ];
+        let mut new_paths: Vec<String> = mac_extra_paths
+            .iter()
+            .filter(|p| std::path::Path::new(p).exists())
+            .map(|s| s.to_string())
+            .collect();
+        if !current_path.is_empty() {
+            new_paths.push(current_path);
+        }
+        std::env::set_var("PATH", new_paths.join(":"));
+    }
+
     info!("Starting Video Upscaler Studio Desktop Service...");
 
     // Print hardware discovery
