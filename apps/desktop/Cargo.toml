@@ -27,6 +27,7 @@ tower-http = { version = "0.5", features = ["cors", "fs"] }
 rfd = "0.15"
 tao = "0.31"
 wry = "0.47"
+image = { workspace = true }
 
 [package.metadata.bundle]
 name = "Video Upscaler Studio"

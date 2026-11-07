@@ -257,11 +257,28 @@ fn main() -> anyhow::Result<()> {
 
     info!("Opening native OS application window (tao + wry)...");
     let event_loop = tao::event_loop::EventLoop::new();
-    let window = tao::window::WindowBuilder::new()
+
+    let app_icon = {
+        let icon_bytes = include_bytes!("../icons/128x128.png");
+        if let Ok(img) = image::load_from_memory(icon_bytes) {
+            let rgba = img.to_rgba8();
+            let (w, h) = rgba.dimensions();
+            tao::window::Icon::from_rgba(rgba.into_raw(), w, h).ok()
+        } else {
+            None
+        }
+    };
+
+    let mut window_builder = tao::window::WindowBuilder::new()
         .with_title("⚡ Video Upscaler Studio Pro")
         .with_inner_size(tao::dpi::LogicalSize::new(1440.0, 900.0))
-        .with_min_inner_size(tao::dpi::LogicalSize::new(1080.0, 720.0))
-        .build(&event_loop)?;
+        .with_min_inner_size(tao::dpi::LogicalSize::new(1080.0, 720.0));
+
+    if let Some(icon) = app_icon {
+        window_builder = window_builder.with_window_icon(Some(icon));
+    }
+
+    let window = window_builder.build(&event_loop)?;
 
     let _webview = wry::WebViewBuilder::new()
         .with_url("http://127.0.0.1:3001")

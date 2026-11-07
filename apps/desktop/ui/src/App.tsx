@@ -688,8 +688,13 @@ export const App: React.FC = () => {
   return (
     <>
       <header className="app-header">
-        <div className="brand-title">
-          <span>⚡ VIDEO UPSCALER STUDIO</span>
+        <div className="brand-title" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <img
+            src="/icon.png"
+            alt="Logo"
+            style={{ width: '28px', height: '28px', borderRadius: '6px', objectFit: 'cover', boxShadow: '0 2px 8px rgba(0,0,0,0.4)' }}
+          />
+          <span>VIDEO UPSCALER STUDIO</span>
           <span className="badge">PRO</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>

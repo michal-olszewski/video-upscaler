@@ -664,6 +664,7 @@ dependencies = [
  "anyhow",
  "axum",
  "engine-core",
+ "image",
  "inference-runtime",
  "models",
  "rfd",
