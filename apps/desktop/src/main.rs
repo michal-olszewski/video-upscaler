@@ -26,7 +26,7 @@ use video_io::MediaProbe;
 struct AppState {
     active_pipeline: Arc<Mutex<Option<Arc<UpscalePipeline>>>>,
     latest_progress: Arc<Mutex<Option<JobProgress>>>,
-    model_downloads: Arc<Mutex<HashMap<String, ModelDownloadProgress>>>,
+    model_downloads: Arc<std::sync::Mutex<HashMap<String, ModelDownloadProgress>>>,
     batch_queue: Arc<Mutex<BatchQueueManager>>,
 }
 
@@ -161,7 +161,7 @@ fn main() -> anyhow::Result<()> {
     let state = AppState {
         active_pipeline: Arc::new(Mutex::new(None)),
         latest_progress: Arc::new(Mutex::new(None)),
-        model_downloads: Arc::new(Mutex::new(HashMap::new())),
+        model_downloads: Arc::new(std::sync::Mutex::new(HashMap::new())),
         batch_queue: Arc::new(Mutex::new(BatchQueueManager::new())),
     };
 
@@ -329,17 +329,33 @@ async fn download_model(
 
     tokio::task::spawn_blocking(move || {
         let downloads_cb = Arc::clone(&downloads);
-        let _ = ModelDownloader::download_model(&model_id, move |prog| {
-            let mut map = downloads_cb.blocking_lock();
-            map.insert(prog.model_id.clone(), prog);
+        let res = ModelDownloader::download_model(&model_id, move |prog| {
+            if let Ok(mut map) = downloads_cb.lock() {
+                map.insert(prog.model_id.clone(), prog);
+            }
         });
+        if let Err(e) = res {
+            if let Ok(mut map) = downloads.lock() {
+                map.insert(
+                    model_id.clone(),
+                    ModelDownloadProgress {
+                        model_id: model_id.clone(),
+                        downloaded_bytes: 0,
+                        total_bytes: 0,
+                        percentage: 0.0,
+                        is_completed: false,
+                        error: Some(e.to_string()),
+                    },
+                );
+            }
+        }
     });
 
     Json(serde_json::json!({ "status": "download_started", "model_id": payload.model_id }))
 }
 
 async fn get_downloads(State(state): State<AppState>) -> impl IntoResponse {
-    let map = state.model_downloads.lock().await;
+    let map = state.model_downloads.lock().unwrap();
     Json(map.clone())
 }
 

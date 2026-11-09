@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use image_processing::{ColorPipeline, TileSpec, TilingEngine};
 use inference_runtime::{ExecutionBackend, HardwareManager};
-use models::ModelRegistry;
+use models::{ModelDownloader, ModelRegistry};
 use ndarray::Array4;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -70,7 +70,7 @@ impl BenchmarkEngine {
             .context("No benchmark model found in registry")?;
 
         let scale = model_desc.scale_factor as usize;
-        let model_path = format!("models/cache/{}", model_desc.filename);
+        let model_path = ModelDownloader::resolve_model_target_path(&model_desc.filename);
         let session = Arc::new(inference_runtime::InferenceSessionWrapper::new_with_scale(
             &model_path,
             exec_backend.clone(),

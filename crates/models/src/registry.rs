@@ -110,7 +110,7 @@ impl ModelRegistry {
                 supports_fp16: true,
                 filename: "rife-v4.6.onnx".to_string(),
                 download_url: Some(
-                    "https://huggingface.co/notaneimu/onnx-image-models/resolve/main/rife46.onnx"
+                    "https://huggingface.co/yuvraj108c/rife-onnx/resolve/main/rife47_ensemble_True_scale_1_sim.onnx"
                         .to_string(),
                 ),
             },

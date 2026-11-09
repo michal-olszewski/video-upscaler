@@ -4,7 +4,7 @@ use base64::Engine;
 use image::{ImageBuffer, Rgb};
 use image_processing::{ColorPipeline, TileSpec, TilingEngine};
 use inference_runtime::{ExecutionBackend, InferenceSessionWrapper};
-use models::ModelRegistry;
+use models::{ModelDownloader, ModelRegistry};
 use ndarray::Array4;
 use serde::{Deserialize, Serialize};
 use std::io::{Cursor, Read};
@@ -136,7 +136,7 @@ impl PreviewEngine {
         let out_w = in_w * scale;
         let out_h = in_h * scale;
 
-        let model_path = format!("models/cache/{}", model_desc.filename);
+        let model_path = ModelDownloader::resolve_model_target_path(&model_desc.filename);
         let session = InferenceSessionWrapper::new_with_scale(&model_path, backend, scale)?;
 
         let tiling_spec = TileSpec {
@@ -269,7 +269,7 @@ impl PreviewEngine {
                 let out_w = in_w * scale;
                 let out_h = in_h * scale;
 
-                let model_path = format!("models/cache/{}", model_desc.filename);
+                let model_path = ModelDownloader::resolve_model_target_path(&model_desc.filename);
                 if let Ok(session) = InferenceSessionWrapper::new_with_scale(&model_path, backend.clone(), scale) {
                     let tiling_spec = TileSpec {
                         tile_size: model_desc.default_tile_size,

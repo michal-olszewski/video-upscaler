@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use image_processing::{ColorPipeline, TileSpec, TilingEngine};
 
 use inference_runtime::InferenceSessionWrapper;
-use models::ModelRegistry;
+use models::{ModelDownloader, ModelRegistry};
 use ndarray::Array4;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -41,7 +41,7 @@ impl UpscalePipeline {
             .context(format!("Model not found: {}", request.model_id))?;
 
         let scale = model_desc.scale_factor as usize;
-        let model_path = format!("models/cache/{}", model_desc.filename);
+        let model_path = ModelDownloader::resolve_model_target_path(&model_desc.filename);
         let session = Arc::new(InferenceSessionWrapper::new_with_scale(&model_path, request.backend.clone(), scale)?);
 
         // Probe input media metadata

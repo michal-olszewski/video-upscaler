@@ -195,11 +195,14 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
     try {
       setDownloadingModelId(modelId);
       setDownloadProgress({ percentage: 0, downloaded: 0, total: 0 });
-      await fetch('/api/models/download', {
+      const postRes = await fetch('/api/models/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model_id: modelId }),
       });
+      if (!postRes.ok) {
+        throw new Error(`Server returned ${postRes.status}: ${await postRes.text()}`);
+      }
 
       const timer = setInterval(async () => {
         try {
@@ -208,6 +211,13 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
             const data = await res.json();
             const prog = data[modelId];
             if (prog) {
+              if (prog.error) {
+                clearInterval(timer);
+                setDownloadingModelId(null);
+                setDownloadProgress(null);
+                alert(`Model download failed: ${prog.error}`);
+                return;
+              }
               setDownloadProgress({
                 percentage: prog.percentage,
                 downloaded: prog.downloaded_bytes,
@@ -225,9 +235,11 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
           console.error(e);
         }
       }, 500);
-    } catch (e) {
+    } catch (e: any) {
       console.error('Download error:', e);
       setDownloadingModelId(null);
+      setDownloadProgress(null);
+      alert(`Download failed: ${e?.message || e}`);
     }
   };
 
@@ -495,7 +507,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '8px' }}>
               <span style={{ fontSize: '11px', color: selectedModel.is_cached ? '#10b981' : '#f59e0b', fontWeight: 600 }}>
-                {selectedModel.is_cached ? '● Ready (Cached in models/cache)' : '○ Weights Not Cached'}
+                {selectedModel.is_cached ? '● Ready (Cached)' : '○ Weights Not Cached'}
               </span>
               {!selectedModel.is_cached && selectedModel.download_url && (
                 <button

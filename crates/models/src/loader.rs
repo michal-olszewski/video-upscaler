@@ -1,3 +1,4 @@
+use crate::downloader::ModelDownloader;
 use crate::registry::{ModelDescriptor, ModelRegistry};
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
@@ -15,7 +16,7 @@ impl ModelManager {
     }
 
     pub fn default_cache_dir() -> PathBuf {
-        PathBuf::from("models/cache")
+        ModelDownloader::cache_dir()
     }
 
     pub fn get_model_path(&self, model: &ModelDescriptor) -> PathBuf {
